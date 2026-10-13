@@ -30,7 +30,7 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   const go = async h => { await page.evaluate(x => (location.hash = x), h); await page.waitForTimeout(250); };
   const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const shot = async n => page.screenshot({ path: `${OUT}/${n}.png`, fullPage: true });
-  const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v2')));
+  const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v3')));
   const sheetOk = async () => { await page.locator('#sheet button[type=submit]').click(); await page.waitForTimeout(250); };
 
   log('== pages (demo, phone 390 & 360) ==');
@@ -55,6 +55,12 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   await page.locator('button[data-act="homeLine"][data-v="north"]').click(); await page.waitForTimeout(200);
   ok(await page.locator('h2:has-text("พัสดุรายบิล")').count() === 0 && await page.locator('h2:has-text("Southern Load Planning")').count() === 0, 'north view hides southern sections');
   await page.locator('button[data-act="homeLine"][data-v="all"]').click(); await page.waitForTimeout(150);
+
+  log('== due dates ==');
+  ok(/ต้องถึงลูกค้าวันนี้/.test(await page.locator('#main .list').first().textContent()), 'home flags an order due today that has no truck yet');
+  await go('#orders');
+  ok(/นมชุมพร/.test(await page.locator('#main .list .row').first().textContent()), 'orders sorted by due date (due today first)');
+  ok(await page.locator('.row:has-text("นมชุมพร") .chip.crit:has-text("ต้องถึงลูกค้าวันนี้")').count() === 1, 'order row shows due-today chip');
 
   log('== queue: 10:00 back-haul rule ==');
   await go('#queue');
@@ -93,8 +99,12 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
 
   log('== dispatch south with parcels ==');
   await page.locator('button[data-act="dpLine"][data-v="south"]').click(); await page.waitForTimeout(200);
+  ok(/นมชุมพร/.test(await page.locator('label.pick').first().textContent()), 'dispatch lists earliest due date first');
   await page.locator('label.pick:has-text("Partner ภูเก็ต") input').check(); await page.waitForTimeout(150);
   await page.locator('label.pick:has-text("นมชุมพร") input').check(); await page.waitForTimeout(200);
+  ok(/เลยกำหนดส่ง/.test(await page.locator('.note.crit').first().textContent().catch(() => '')), 'warns when departure date is after the due date');
+  await page.fill('#dp-date', await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })); await page.waitForTimeout(250);
+  ok(/วันเดียวกับกำหนดส่ง/.test(await page.locator('.note.warn').first().textContent().catch(() => '')), 'same-day departure gets a softer warning');
   const tot = await page.locator('#dp-totals').textContent();
   ok(/2\s*พัสดุ/.test(tot) || /\+ 2 พัสดุ/.test(tot), 'totals include parcels: ' + tot.replace(/\s+/g, ' '));
   await page.locator('.pick:has(.reco)').first().click(); await page.waitForTimeout(200);
@@ -168,13 +178,17 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   await go('#orders');
   await page.locator('button[data-act="ordStatus"][data-v="all"]').click(); await page.waitForTimeout(150);
   await page.locator('.row:has-text("DP-ตย-210") button[data-act="sortStore"]').click(); await page.waitForTimeout(200);
-  await page.fill('#srt-text', 'จังหวัด\tร้าน\tชิ้น\tพาเลท\tน้ำหนัก(กก.)\tรายได้\nภูเก็ต\tร้านทดสอบ A\t300\t4\t4500\t6000\nตรัง\tร้านทดสอบ B\t120\t2\t1800\t2600');
+  await page.fill('#srt-text', 'จังหวัด\tร้าน\tกำหนดส่ง\tชิ้น\tพาเลท\tน้ำหนัก(กก.)\tรายได้\nภูเก็ต\tร้านทดสอบ A\t20/10/2569\t300\t4\t4500\t6000\nตรัง\tร้านทดสอบ B\t\t120\t2\t1800\t2600');
   await page.waitForTimeout(150);
-  ok(/จะสร้าง 2/.test(await page.locator('#srt-preview').textContent()), 'sort preview counts rows');
+  ok(/จะสร้าง 2/.test(await page.locator('#srt-preview').textContent()) && /มีกำหนดส่งในตาราง 1 แถว/.test(await page.locator('#srt-preview').textContent()), 'sort preview counts rows and due dates');
+  await sheetOk();
+  ok(/ระบุกำหนดส่ง/.test(await page.locator('#sheet-err').textContent()), 'rows without a due date are refused');
+  await page.fill('#srt-due', '2026-10-21');
   await sheetOk();
   dd = await demo();
   const kids = Object.values(dd.orders).filter(o => o.parentId === 'o3');
   ok(kids.length === 2 && kids.some(o => o.customer === 'นมภูเก็ต ร้านทดสอบ A' && o.kind === 'SOUTH' && o.line === 'south'), 'creates south orders named นม+จังหวัด+ร้าน');
+  ok(kids.find(o => o.customer.includes('ร้านทดสอบ A')).dueDate === '2026-10-20' && kids.find(o => o.customer.includes('ร้านทดสอบ B')).dueDate === '2026-10-21', 'due date from the table (Thai year) or the default');
 
   log('== north trip legs + close ==');
   await go('#trip-t21');

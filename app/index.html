@@ -458,7 +458,7 @@ function settings() {
   return { ...DEFAULT_SETTINGS, ...s, fuelStd: { ...DEFAULT_SETTINGS.fuelStd, ...(s.fuelStd || {}) }, minRevenue: { ...DEFAULT_SETTINGS.minRevenue, ...(s.minRevenue || {}) } };
 }
 const clean = obj => { const o = JSON.parse(JSON.stringify(obj)); delete o.id; return o; };
-const DEMO_KEY = 'ssc-demo-data-v2';
+const DEMO_KEY = 'ssc-demo-data-v3';
 function saveLocal() { ls.set('ssc-local-data', S.live); }
 function saveDemo() { ls.set(DEMO_KEY, S.demoData); }
 async function put(col, id, obj) {
@@ -576,6 +576,7 @@ function loadTotals(orderIds, groupKeys = []) {
     pallets: pick('pallets'), pieces: pick('pieces') + sum(ps.map(p => num(p.boxes))), bills: pick('bills') + ps.length,
     weightKg: pick('weightKg') + sum(ps.map(p => num(p.weightKg))), volumeCbm: pick('volumeCbm'), revenue: pick('revenue') + sum(ps.map(p => num(p.fee))),
     reqTypes: new Set(os.map(o => o.reqType).filter(Boolean)),
+    earliestDue: minDue(os),
   };
 }
 function tripCalc(t) {
@@ -726,6 +727,17 @@ function locChip(c) {
   if (c.inRadius === false) return chip('crit', `นอกรัศมี · ห่าง ${dist(c.distanceM)}`, 'pin');
   return chip('', 'มีพิกัด (จุดเช็คอินยังไม่ปักหมุด)', 'pin');
 }
+function dueChip(due, done) {
+  if (!due) return '';
+  const t = dayKey();
+  if (done) return chip('', `กำหนดส่ง ${thDate(due)}`, 'clock');
+  if (due < t) return chip('crit', `เลยกำหนดส่ง ${thDate(due)}`, 'clock');
+  if (due === t) return chip('crit', 'ต้องถึงลูกค้าวันนี้', 'clock');
+  if (due === addDays(t, 1)) return chip('warn', 'ต้องถึงลูกค้าพรุ่งนี้', 'clock');
+  return chip('', `ต้องถึงลูกค้า ${thDate(due)}`, 'clock');
+}
+const minDue = arr => arr.map(x => x && x.dueDate).filter(Boolean).sort()[0] || null;
+const byDue = (a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')) || String(a.date).localeCompare(String(b.date)) || String(a.destination).localeCompare(String(b.destination), 'th');
 const canWrite = () => S.demo || !S.readOnly;
 const dis = () => canWrite() ? '' : 'disabled';
 const seg = (act, cur, items) => `<div class="seg" role="group">${items.map(([k, l, c]) => `<button data-act="${act}" data-v="${esc(k)}" aria-pressed="${cur === k}">${esc(l)}${c !== undefined ? `<span class="c">${c}</span>` : ''}</button>`).join('')}</div>`;
@@ -855,7 +867,11 @@ PAGES.home = () => {
     if (c.ready === false) att.push({ st: 'serious', html: `${plate(v)} <span>รถไม่พร้อม: ${esc(c.issue || '-')}</span>`, href: '#queue' });
     if (Date.now() - new Date(c.at) > s.staleHours * 3600000) att.push({ st: 'warn', html: `${plate(v)} <span>รอคิวนานเกิน ${s.staleHours} ชม.</span>`, href: '#queue' });
   });
-  open.forEach(o => { if (o.date && o.date < today) att.push({ st: 'crit', html: `<span>ออเดอร์ค้าง ${esc(o.customer || '')} → ${esc(o.destination || '')} (วันโหลด ${thDate(o.date)})</span>`, href: '#orders' }); });
+  open.forEach(o => {
+    if (o.dueDate && o.dueDate <= addDays(today, 1)) att.push({ st: o.dueDate <= today ? 'crit' : 'warn', html: `<span>ยังไม่ได้จัดรถ ${esc(o.customer || '')} → ${esc(o.destination || '')} · ${o.dueDate < today ? 'เลยกำหนดส่ง' : o.dueDate === today ? 'ต้องถึงลูกค้าวันนี้' : 'ต้องถึงลูกค้าพรุ่งนี้'}</span>`, href: '#dispatch' });
+    else if (o.date && o.date < today) att.push({ st: 'crit', html: `<span>ออเดอร์ค้าง ${esc(o.customer || '')} → ${esc(o.destination || '')} (วันโหลด ${thDate(o.date)})</span>`, href: '#orders' });
+  });
+  trips.filter(t => t.status === 'planned' || t.status === 'running').forEach(t => { const due = minDue(t.jobs || []); if (due && due < today) att.push({ st: 'crit', html: `${plate(vehicleOf(t.vehicleId))} <span>ทริป ${esc(t.no)} เลยกำหนดส่งถึงลูกค้า ${thDate(due)}</span>`, href: '#trip-' + t.id }); });
   running.forEach(t => { if (t.departedAt && Date.now() - new Date(t.departedAt) > 4 * 86400000) att.push({ st: 'warn', html: `${plate(vehicleOf(t.vehicleId))} <span>ทริป ${esc(t.no)} วิ่งเกิน 4 วัน ยังไม่ปิด</span>`, href: '#trip-' + t.id }); });
   if (L !== 'north') {
     pArr.forEach(p => { if (p.arrivedAt && Date.now() - new Date(p.arrivedAt) > 2 * 86400000) att.push({ st: 'warn', html: `<span class="trk">${esc(p.no)}</span> <span>ถึง${esc(parcelGroupName(parcelGroupKey(p)))}เกิน 2 วัน ยังไม่ส่ง</span>`, href: '#parcel-' + p.id }); });
@@ -1185,14 +1201,14 @@ PAGES.orders = () => {
   if (o.line !== 'all') list = list.filter(x => orderLine(x) === o.line);
   if (o.date) list = list.filter(x => x.date === o.date);
   if (o.q.trim()) { const q = o.q.trim().toLowerCase(); list = list.filter(x => [x.customer, x.destination, x.origin, x.ref, x.note, x.category].join(' ').toLowerCase().includes(q)); }
-  list.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.destination).localeCompare(String(b.destination), 'th'));
+  list.sort(byDue);
   const T = loadTotals(list.map(x => x.id));
   return `
   <div class="sec-h">
     ${seg('ordStatus', o.status, [['open', 'รอจัดรถ', counts.open], ['planned', 'จัดรถแล้ว', counts.planned], ['done', 'ส่งแล้ว'], ['all', 'ทั้งหมด']])}
     <div class="rowflex"><button class="btn" data-act="import" data-v="orders" ${dis()}>${icon('upload')}นำเข้า</button><button class="btn primary" data-act="edit" data-col="orders" ${dis()}>${icon('plus')}เพิ่มออเดอร์</button></div>
   </div>
-  <div class="note small">งาน 3 แบบ: <b>นมเหมาคัน</b> นครสวรรค์ → ห้าง/เดโป · <b>นมร้านค้า</b> เหมาคันเข้าคลังสาย 3 แล้ว Checker คัดแยก (ตั้งชื่อ "นม + จังหวัด + ร้าน") · <b>ขนม / เบ็ดเตล็ด</b> รายบิลที่สาย 3 บันทึกที่เมนู <a href="#parcels">พัสดุ</a></div>
+  <div class="note small">งาน 3 แบบ: <b>นมเหมาคัน</b> นครสวรรค์ → ห้าง/เดโป · <b>นมร้านค้า</b> เหมาคันเข้าคลังสาย 3 แล้ว Checker คัดแยก (ตั้งชื่อ "นม + จังหวัด + ร้าน" พร้อมวันกำหนดส่งถึงลูกค้า) · <b>ขนม / เบ็ดเตล็ด</b> รายบิลที่สาย 3 บันทึกที่เมนู <a href="#parcels">พัสดุ</a></div>
   <div class="grid3">
     <div class="field"><label for="of-line">สาย</label><select id="of-line" data-bind="orders.line" data-rerender="all">${[['all', 'ทุกสาย'], ['north', 'สายเหนือ'], ['south', 'สายใต้']].map(([k, l]) => `<option value="${k}" ${o.line === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
     <div class="field"><label for="of-kind">ประเภทงาน</label><select id="of-kind" data-bind="orders.kind" data-rerender="all"><option value="all">ทั้งหมด</option>${ORDER_KINDS.map(k => `<option value="${k}" ${o.kind === k ? 'selected' : ''}>${KIND[k].label}</option>`).join('')}</select></div>
@@ -1213,6 +1229,7 @@ function orderRow(x) {
   return `<div class="row"><div class="main">
     <div class="l1">${kindB(x.kind)} <b>${esc(x.customer || 'ไม่ระบุลูกค้า')}</b> ${x.category ? `<span class="small muted">${esc(x.category)}</span>` : ''} ${x.ref ? `<span class="small muted mono">${esc(x.ref)}</span>` : ''} ${statusChip(ORDER_STATUS, x.status)} ${lineBadge(orderLine(x))}</div>
     <div class="meta">${esc(x.origin || '–')} → <b>${esc(x.destination || '–')}</b> · โหลด ${thDate(x.date)}${r ? ` · ${esc(r.name)}` : ''}</div>
+    ${x.dueDate ? `<div class="l1">${dueChip(x.dueDate, x.status === 'done' || x.status === 'cancel')}</div>` : ''}
     <div class="meta num small">${fmt(num(x.pallets))} พาเลท · ${fmt(num(x.pieces))} ชิ้น · ${fmt(num(x.bills))} บิล · ${fmt(num(x.weightKg))} กก. · ${fmt(num(x.volumeCbm), 1)} คิว · <b>${money(num(x.revenue))}</b>${x.reqType ? ` · Checker: ${esc(x.reqType)} ล้อ` : ''}</div>
     ${x.kind === 'STORE' ? `<div class="l1">${children.length ? chip('good', `Checker คัดแยกแล้ว ${children.length} รายการ`, 'split') : chip('warn', 'ยังไม่ได้คัดแยกที่สาย 3', 'split')}</div>` : ''}
     ${x.parentId && S.d.orders[x.parentId] ? `<div class="small muted">คัดแยกจาก ${esc(S.d.orders[x.parentId].customer || '')} ${esc(S.d.orders[x.parentId].ref || '')}</div>` : ''}
@@ -1222,21 +1239,24 @@ function orderRow(x) {
 }
 function openSortStore(id) {
   const parent = S.d.orders[id]; if (!parent) return;
-  const head = ['จังหวัด', 'ร้าน', 'ชิ้น', 'พาเลท', 'น้ำหนัก(กก.)', 'รายได้'];
+  const head = ['จังหวัด', 'ร้าน', 'กำหนดส่ง', 'ชิ้น', 'พาเลท', 'น้ำหนัก(กก.)', 'รายได้'];
   openSheet({
     title: 'คัดแยกนมร้านค้าที่สาย 3',
     body: `<p class="meta">จาก ${esc(parent.customer || '')} ${esc(parent.ref || '')} · ${fmt(num(parent.pieces))} ชิ้น · ${fmt(num(parent.weightKg))} กก.</p>
-      <p class="small muted">วางรายการร้านค้าจาก Excel (มีแถวหัวตาราง) ระบบจะสร้างออเดอร์ "กระจายภาคใต้" ตั้งชื่อเป็น นม + จังหวัด + ร้าน ให้ทุกบรรทัด</p>
+      <p class="small muted">วางรายการร้านค้าจาก Excel (มีแถวหัวตาราง) ระบบจะสร้างออเดอร์ "กระจายภาคใต้" ตั้งชื่อเป็น นม + จังหวัด + ร้าน ให้ทุกบรรทัด พร้อมวันกำหนดส่งถึงลูกค้า</p>
       <div class="field"><span class="lbl">หัวตาราง</span><div class="rowflex"><code class="mono small note" style="flex:1;min-width:0;overflow-x:auto;white-space:nowrap">${esc(head.join(' | '))}</code><button type="button" class="btn sm" data-act="copyText" data-v="${esc(head.join('\t'))}">${icon('copy')}คัดลอก</button></div></div>
-      <div class="field"><label for="srt-date">วันที่ออกรถสายใต้</label><input id="srt-date" name="date" type="date" value="${esc(dayKey())}"></div>
-      <div class="field"><label for="srt-text">รายการร้านค้า</label><textarea id="srt-text" name="text" rows="7" data-sort="1" placeholder="จังหวัด	ร้าน	ชิ้น	พาเลท	น้ำหนัก(กก.)	รายได้"></textarea></div>
+      <div class="grid2"><div class="field"><label for="srt-date">วันที่ออกรถสายใต้</label><input id="srt-date" name="date" type="date" value="${esc(dayKey())}"></div>
+      <div class="field"><label for="srt-due">กำหนดส่งถึงลูกค้า</label><input id="srt-due" name="due" type="date" value=""><span class="hint">ใช้กับแถวที่ไม่มีคอลัมน์ กำหนดส่ง</span></div></div>
+      <div class="field"><label for="srt-text">รายการร้านค้า</label><textarea id="srt-text" name="text" rows="7" data-sort="1" placeholder="จังหวัด	ร้าน	กำหนดส่ง	ชิ้น	พาเลท	น้ำหนัก(กก.)	รายได้"></textarea></div>
       <div id="srt-preview" class="small meta">ยังไม่มีข้อมูล</div>`,
     submit: 'สร้างออเดอร์กระจายภาคใต้',
     onSubmit: async fd => {
       const rows = parseSortRows(fd.text);
       if (!rows.length) return 'ไม่พบรายการ ตรวจว่ามีแถวหัวตาราง และมีคอลัมน์ จังหวัด กับ ร้าน';
+      const noDue = rows.filter(r => !r.dueDate && !fd.due);
+      if (noDue.length) return `ระบุกำหนดส่งถึงลูกค้า (ยังไม่มีกำหนดส่ง ${noDue.length} แถว เช่น นม${noDue[0].province} ${noDue[0].store})`;
       for (const r of rows) {
-        await put('orders', uid(), { date: fd.date || dayKey(), customer: `นม${r.province} ${r.store}`.trim(), kind: 'SOUTH', line: 'south', category: 'นมร้านค้า', origin: 'คลังพุทธมณฑลสาย 3', destination: r.province, pieces: r.pieces, pallets: r.pallets, weightKg: r.weightKg, revenue: r.revenue, status: 'open', source: 'sort', parentId: parent.id, createdAt: new Date().toISOString() });
+        await put('orders', uid(), { date: fd.date || dayKey(), dueDate: r.dueDate || fd.due, customer: `นม${r.province} ${r.store}`.trim(), kind: 'SOUTH', line: 'south', category: 'นมร้านค้า', origin: 'คลังพุทธมณฑลสาย 3', destination: r.province, pieces: r.pieces, pallets: r.pallets, weightKg: r.weightKg, revenue: r.revenue, status: 'open', source: 'sort', parentId: parent.id, createdAt: new Date().toISOString() });
       }
       await patch('orders', parent.id, { sortedAt: new Date().toISOString() });
       toast(`สร้างออเดอร์กระจายภาคใต้ ${rows.length} รายการ`);
@@ -1246,9 +1266,9 @@ function openSortStore(id) {
 function parseSortRows(text) {
   const t = tableRows(text); if (!t) return [];
   const idx = names => t.headers.findIndex(h => names.some(n => normH(n) === normH(h)));
-  const ip = idx(['จังหวัด', 'province']), is = idx(['ร้าน', 'ชื่อร้าน', 'store']), ipc = idx(['ชิ้น', 'pieces']), ipl = idx(['พาเลท', 'pallets']), iw = idx(['น้ำหนัก(กก.)', 'น้ำหนัก', 'weight']), ir = idx(['รายได้', 'ค่าขนส่ง', 'revenue']);
+  const ip = idx(['จังหวัด', 'province']), is = idx(['ร้าน', 'ชื่อร้าน', 'store']), idue = idx(['กำหนดส่ง', 'วันกำหนดส่ง', 'ต้องถึงลูกค้า', 'due']), ipc = idx(['ชิ้น', 'pieces']), ipl = idx(['พาเลท', 'pallets']), iw = idx(['น้ำหนัก(กก.)', 'น้ำหนัก', 'weight']), ir = idx(['รายได้', 'ค่าขนส่ง', 'revenue']);
   if (ip < 0) return [];
-  return t.rows.map(c => ({ province: (c[ip] || '').trim().replace(/^จ\.\s*/, ''), store: is >= 0 ? (c[is] || '').trim() : '', pieces: ipc >= 0 ? num(c[ipc]) : null, pallets: ipl >= 0 ? num(c[ipl]) : null, weightKg: iw >= 0 ? num(c[iw]) : null, revenue: ir >= 0 ? num(c[ir]) : null })).filter(r => r.province);
+  return t.rows.map(c => ({ province: (c[ip] || '').trim().replace(/^จ\.\s*/, ''), store: is >= 0 ? (c[is] || '').trim() : '', dueDate: idue >= 0 ? parseDate(c[idue]) : '', pieces: ipc >= 0 ? num(c[ipc]) : null, pallets: ipl >= 0 ? num(c[ipl]) : null, weightKg: iw >= 0 ? num(c[iw]) : null, revenue: ir >= 0 ? num(c[ir]) : null })).filter(r => r.province);
 }
 
 /* ---------- parcels (เบ็ดเตล็ด / ขนม รายบิล) ---------- */
@@ -1548,7 +1568,7 @@ PAGES.dispatch = () => {
   if (p.line !== 'all') open = open.filter(o => orderLine(o) === p.line || p.sel[o.id]);
   if (p.kind !== 'all') open = open.filter(o => o.kind === p.kind || p.sel[o.id]);
   if (p.dateFilter) open = open.filter(o => o.date === p.dateFilter || p.sel[o.id]);
-  open.sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.destination).localeCompare(String(b.destination), 'th'));
+  open.sort(byDue);
   const showParcels = p.line !== 'north';
   const load = loadTotals(Object.keys(p.sel), Object.keys(p.psel));
   const routes = Object.values(d.routes).filter(r => p.line === 'all' || !r.line || r.line === p.line).sort(thSort('name'));
@@ -1574,7 +1594,7 @@ PAGES.dispatch = () => {
       <div class="field"><label for="dp-kind">ประเภทงาน</label><select id="dp-kind" data-bind="dp.kind" data-rerender="all"><option value="all">ทั้งหมด</option>${ORDER_KINDS.map(k => `<option value="${k}" ${p.kind === k ? 'selected' : ''}>${KIND[k].label}</option>`).join('')}</select></div>
       <div class="field"><label for="dp-df">วันที่โหลด</label><input id="dp-df" type="date" data-bind="dp.dateFilter" data-rerender="all" value="${esc(p.dateFilter)}"></div>
     </div>
-    <div class="list">${open.length ? open.map(o => `<label class="pick"><input type="checkbox" data-act="dpSel" data-id="${esc(o.id)}" ${p.sel[o.id] ? 'checked' : ''}><span class="main"><span class="l1">${kindB(o.kind)} <b>${esc(o.customer || '-')}</b> <span class="meta">→ ${esc(o.destination || '-')}</span>${o.reqType ? ` <span class="small muted">Checker: ${esc(o.reqType)} ล้อ</span>` : ''}</span><span class="small meta num">โหลด ${thDate(o.date)} · ${fmt(num(o.pallets))} พาเลท · ${fmt(num(o.weightKg))} กก. · ${fmt(num(o.volumeCbm), 1)} คิว · ${fmt(num(o.bills))} บิล · ${money(num(o.revenue))}</span></span></label>`).join('') : empty(allOpen ? 'ไม่มีออเดอร์ตามตัวกรอง' : 'ไม่มีออเดอร์รอจัดรถ', allOpen ? 'ล้างตัวกรองสาย/ประเภท/วันที่' : 'เพิ่มออเดอร์ที่หน้า ออเดอร์ ก่อน', allOpen ? '' : '<a class="btn" href="#orders">ไปหน้าออเดอร์</a>')}</div>
+    <div class="list">${open.length ? open.map(o => `<label class="pick"><input type="checkbox" data-act="dpSel" data-id="${esc(o.id)}" ${p.sel[o.id] ? 'checked' : ''}><span class="main"><span class="l1">${kindB(o.kind)} <b>${esc(o.customer || '-')}</b> <span class="meta">→ ${esc(o.destination || '-')}</span>${o.reqType ? ` <span class="small muted">Checker: ${esc(o.reqType)} ล้อ</span>` : ''}</span>${o.dueDate ? `<span class="l1">${dueChip(o.dueDate)}</span>` : ''}<span class="small meta num">โหลด ${thDate(o.date)} · ${fmt(num(o.pallets))} พาเลท · ${fmt(num(o.weightKg))} กก. · ${fmt(num(o.volumeCbm), 1)} คิว · ${fmt(num(o.bills))} บิล · ${money(num(o.revenue))}</span></span></label>`).join('') : empty(allOpen ? 'ไม่มีออเดอร์ตามตัวกรอง' : 'ไม่มีออเดอร์รอจัดรถ', allOpen ? 'ล้างตัวกรองสาย/ประเภท/วันที่' : 'เพิ่มออเดอร์ที่หน้า ออเดอร์ ก่อน', allOpen ? '' : '<a class="btn" href="#orders">ไปหน้าออเดอร์</a>')}</div>
     ${showParcels ? `<h3>พัสดุรายบิล (ขนม / เบ็ดเตล็ด) รอขึ้นรถ</h3>
     <div class="list">${groupsAll.length ? groupsAll.map(g => `<label class="pick"><input type="checkbox" data-act="dpPsel" data-id="${esc(g.key)}" ${p.psel[g.key] ? 'checked' : ''}><span class="main"><span class="l1">${kindB('SOUTH')} <b>พัสดุ → ${esc(g.name)}</b></span><span class="small meta num">${g.parcels.length} บิล · ${fmt(g.boxes)} กล่อง · ${fmt(g.weightKg)} กก. · ค่าส่ง ${money(g.fee)}</span></span></label>`).join('') : empty('ไม่มีพัสดุรอขึ้นรถ', '')}</div>` : ''}
   </section>
@@ -1585,8 +1605,9 @@ PAGES.dispatch = () => {
     <div class="grid2">
       <div class="field"><label for="dp-route">เส้นทาง (Route)</label><select id="dp-route" data-bind="dp.routeId" data-rerender="all"><option value="">— ยังไม่ระบุ —</option>${routes.map(r => `<option value="${esc(r.id)}" ${p.routeId === r.id ? 'selected' : ''}>${esc(r.name)}${num(r.standardKm) ? ` · ${fmt(num(r.standardKm))} กม.` : ''}</option>`).join('')}</select>
         <span class="hint">${route ? (num(route.standardKm) ? `Standard KM ขานี้ ${fmt(num(route.standardKm))} กม. ขากลับ/วิ่งเปล่าเพิ่มในทริปได้` : 'เส้นทางนี้ยังไม่มี Standard KM (รอ Route Master)') : 'ถ้ายังไม่มีเส้นทางตรง เลือกภายหลังได้ในทริป'}</span></div>
-      <div class="field"><label for="dp-date">วันออกรถ</label><input id="dp-date" type="date" data-bind="dp.date" value="${esc(p.date)}"></div>
+      <div class="field"><label for="dp-date">วันออกรถ</label><input id="dp-date" type="date" data-bind="dp.date" data-rerender="all" value="${esc(p.date)}"></div>
     </div>
+    ${load.earliestDue ? (p.date > load.earliestDue ? `<div class="note crit small">วันออกรถ ${thDate(p.date)} เลยกำหนดส่งถึงลูกค้า ${thDate(load.earliestDue)} ของออเดอร์ที่เลือก เลื่อนวันออกรถหรือแจ้งลูกค้า</div>` : p.date === load.earliestDue ? `<div class="note warn small">ออกรถวันเดียวกับกำหนดส่งถึงลูกค้า (${thDate(load.earliestDue)}) ตรวจว่าวิ่งทัน</div>` : `<div class="note good small">กำหนดส่งเร็วสุดของ Load นี้ ${thDate(load.earliestDue)} ออกรถ ${thDate(p.date)} ทันกำหนด</div>`) : ''}
   </section>
 
   <section class="sec">
@@ -1658,7 +1679,7 @@ async function createTrip() {
   load.orders.forEach(o => { (byKind[o.kind || 'OTHER'] = byKind[o.kind || 'OTHER'] || []).push(o); });
   const jobs = Object.entries(byKind).map(([kind, os]) => {
     const t = loadTotals(os.map(o => o.id));
-    return { id: uid(), kind, routeId: route ? route.id : null, origin: uniq(os.map(o => o.origin)).join(' / '), destination: uniq(os.map(o => o.destination)).join(' → '), customers: uniq(os.map(o => o.customer)).join(', '), orderIds: os.map(o => o.id), revenue: t.revenue, weightKg: t.weightKg, volumeCbm: t.volumeCbm, pallets: t.pallets, bills: t.bills };
+    return { id: uid(), kind, routeId: route ? route.id : null, origin: uniq(os.map(o => o.origin)).join(' / '), destination: uniq(os.map(o => o.destination)).join(' → '), customers: uniq(os.map(o => o.customer)).join(', '), orderIds: os.map(o => o.id), revenue: t.revenue, weightKg: t.weightKg, volumeCbm: t.volumeCbm, pallets: t.pallets, bills: t.bills, dueDate: minDue(os) };
   });
   if (load.parcels.length) jobs.push({ id: uid(), kind: 'SOUTH', parcel: true, routeId: route ? route.id : null, origin: 'คลังพุทธมณฑลสาย 3', destination: load.groups.map(g => g.name).join(' → '), customers: 'พัสดุรายบิล (ขนม / เบ็ดเตล็ด)', orderIds: [], revenue: null, weightKg: sum(load.parcels.map(x => num(x.weightKg))), bills: load.parcels.length });
   const seq = Object.values(d.trips).filter(t => t.date === p.date).length + 1;
@@ -1696,7 +1717,7 @@ PAGES.trips = () => {
 function tripRow(t) {
   const v = vehicleOf(t.vehicleId); const c = tripCalc(t);
   return `<a class="row" href="#trip-${esc(t.id)}" style="text-decoration:none;color:inherit"><div class="main">
-    <div class="l1"><b class="mono">${esc(t.no)}</b> ${statusChip(TRIP_STATUS, t.status)} ${lineBadge(tripLine(t))} <span class="small muted">ออก ${thDate(t.date)}</span></div>
+    <div class="l1"><b class="mono">${esc(t.no)}</b> ${statusChip(TRIP_STATUS, t.status)} ${lineBadge(tripLine(t))} <span class="small muted">ออก ${thDate(t.date)}</span> ${dueChip(minDue(t.jobs || []), t.status === 'closed' || t.status === 'cancel')}</div>
     <div class="l1">${plate(v)} ${vt(v && v.type)} <span class="meta">${esc(driverName(t.driverId))}</span></div>
     <div class="l1">${(t.jobs || []).map(j => `${kindB(j.kind)} <span class="meta">${esc(j.destination || '-')}</span>`).join(' <span class="muted">·</span> ')}</div>
     <div class="small meta num">${c.actual !== null ? `${fmt(c.actual)} กม.` : c.std !== null ? `Standard ${fmt(c.std)} กม.` : ''} · รายได้ ${money(c.revenue)}${c.parcels.length ? ` · พัสดุ ${c.parcels.length} บิล` : ''}${t.status === 'closed' ? ` · ต้นทุน ${money(c.cost)}` : ''}</div>
@@ -1760,7 +1781,7 @@ PAGES.trip = id => {
   ${action}
   <section class="sec">
     <div class="sec-h"><h2>งานในทริป (ขา / Job)</h2>${t.status !== 'closed' && t.status !== 'cancel' ? `<button class="btn sm" data-act="addJob" data-id="${esc(t.id)}" ${dis()}>${icon('plus')}เพิ่มขา (Backhaul / วิ่งเปล่า)</button>` : ''}</div>
-    <div class="list">${(t.jobs || []).map(j => { const r = routeOf(j.routeId); return `<div class="row"><div class="main"><div class="l1">${kindB(j.kind)} <b>${esc(j.origin || '–')} → ${esc(j.destination || '–')}</b></div><div class="small meta num">${j.customers ? esc(j.customers) + ' · ' : ''}${j.parcel ? `${c.parcels.length} บิล · ${fmt(pBoxes)} กล่อง · ยิงขึ้นรถ ${pLoaded}/${pBoxes} · <b>${money(c.parcelRevenue)}</b>` : `${(j.orderIds || []).length} ออเดอร์ · ${fmt(num(j.bills))} บิล · ${fmt(num(j.weightKg))} กก. · <b>${money(num(j.revenue))}</b>`}${r ? ' · ' + esc(r.name) + (num(r.standardKm) ? ` (${fmt(num(r.standardKm))} กม.)` : '') : ''}</div>${j.note ? `<div class="small muted">${esc(j.note)}</div>` : ''}<div class="actions">${j.parcel ? `<a class="btn sm" href="#scan" data-act="scanForTrip" data-id="${esc(t.id)}">${icon('scan')}ยิงพัสดุขึ้นรถ</a>` : ''}${t.status !== 'closed' && t.status !== 'cancel' && (t.jobs || []).length > 1 ? `<button class="btn sm danger" data-act="removeJob" data-id="${esc(t.id)}" data-job="${esc(j.id)}" ${dis()}>เอาขานี้ออก</button>` : ''}</div></div></div>`; }).join('') || empty('ยังไม่มีงาน', '')}</div>
+    <div class="list">${(t.jobs || []).map(j => { const r = routeOf(j.routeId); return `<div class="row"><div class="main"><div class="l1">${kindB(j.kind)} <b>${esc(j.origin || '–')} → ${esc(j.destination || '–')}</b> ${dueChip(j.dueDate, t.status === 'closed' || t.status === 'cancel')}</div><div class="small meta num">${j.customers ? esc(j.customers) + ' · ' : ''}${j.parcel ? `${c.parcels.length} บิล · ${fmt(pBoxes)} กล่อง · ยิงขึ้นรถ ${pLoaded}/${pBoxes} · <b>${money(c.parcelRevenue)}</b>` : `${(j.orderIds || []).length} ออเดอร์ · ${fmt(num(j.bills))} บิล · ${fmt(num(j.weightKg))} กก. · <b>${money(num(j.revenue))}</b>`}${r ? ' · ' + esc(r.name) + (num(r.standardKm) ? ` (${fmt(num(r.standardKm))} กม.)` : '') : ''}</div>${j.note ? `<div class="small muted">${esc(j.note)}</div>` : ''}<div class="actions">${j.parcel ? `<a class="btn sm" href="#scan" data-act="scanForTrip" data-id="${esc(t.id)}">${icon('scan')}ยิงพัสดุขึ้นรถ</a>` : ''}${t.status !== 'closed' && t.status !== 'cancel' && (t.jobs || []).length > 1 ? `<button class="btn sm danger" data-act="removeJob" data-id="${esc(t.id)}" data-job="${esc(j.id)}" ${dis()}>เอาขานี้ออก</button>` : ''}</div></div></div>`; }).join('') || empty('ยังไม่มีงาน', '')}</div>
   </section>
   <section class="sec">
     <h2>ระยะทาง น้ำมัน ต้นทุน</h2>
@@ -1846,6 +1867,7 @@ const FIELDS = {
   ],
   orders: [
     { k: 'date', label: 'วันที่โหลด', type: 'date', req: true },
+    { k: 'dueDate', label: 'กำหนดส่งถึงลูกค้า', type: 'date', hint: 'วันที่สินค้าต้องถึงลูกค้า' },
     { k: 'customer', label: 'ลูกค้า / ชื่องาน', req: true, hint: 'นมร้านค้าตั้งชื่อเป็น นม + จังหวัด + ร้าน เช่น นมภูเก็ต ร้าน…' },
     { k: 'kind', label: 'ประเภทงาน', type: 'select', opts: ORDER_KINDS.map(k => [k, KIND[k].label]) },
     { k: 'line', label: 'สาย', type: 'select', opts: [['', 'ตามประเภทงาน'], ...LINE_OPTS.slice(1)] },
@@ -1960,7 +1982,7 @@ const IMPORT = {
   drivers: { key: 'name', cols: { name: ['ชื่อ-นามสกุล', 'ชื่อนามสกุล', 'ชื่อ', 'name'], nickname: ['ชื่อเล่น', 'nickname'], phone: ['เบอร์โทร', 'โทร', 'phone'] } },
   sites: { key: 'name', cols: { name: ['ชื่อจุด', 'ชื่อ', 'name'], aliases: ['ชื่อเรียกหน้างาน', 'alias'], coords: ['พิกัด', 'coords', 'latlng'], radiusM: ['รัศมี(ม.)', 'รัศมี', 'radius'], line: ['สาย', 'line'] } },
   routes: { key: 'name', cols: { name: ['ชื่อเส้นทาง', 'เส้นทาง', 'name'], kind: ['ประเภทงาน', 'ประเภท', 'kind'], line: ['สาย', 'line'], origin: ['ต้นทาง', 'origin'], destination: ['ปลายทาง', 'destination'], standardKm: ['StandardKM', 'ระยะทาง', 'กม.', 'km'], allowance: ['เบี้ยเลี้ยง', 'allowance'], toll: ['ทางด่วน', 'ค่าทางด่วน', 'toll'] } },
-  orders: { key: null, cols: { date: ['วันที่โหลด', 'วันที่', 'date'], customer: ['ลูกค้า', 'ชื่องาน', 'customer'], kind: ['ประเภทงาน', 'ประเภท', 'kind'], line: ['สาย', 'line'], category: ['หมวด', 'category'], ref: ['เลขOrder', 'เลขบิล', 'order', 'ref'], origin: ['ต้นทาง', 'origin'], destination: ['ปลายทาง', 'destination'], reqType: ['ประเภทรถ', 'Checker', 'reqtype'], pallets: ['พาเลท', 'pallets'], pieces: ['ชิ้น', 'pieces'], bills: ['บิล', 'จำนวนบิล', 'bills'], weightKg: ['น้ำหนัก(กก.)', 'น้ำหนัก', 'weight'], volumeCbm: ['ปริมาตร(คิว)', 'ปริมาตร', 'volume'], revenue: ['รายได้', 'ค่าขนส่ง', 'revenue'] } },
+  orders: { key: null, cols: { date: ['วันที่โหลด', 'วันที่', 'date'], dueDate: ['กำหนดส่ง', 'วันกำหนดส่ง', 'ต้องถึงลูกค้า', 'due', 'duedate'], customer: ['ลูกค้า', 'ชื่องาน', 'customer'], kind: ['ประเภทงาน', 'ประเภท', 'kind'], line: ['สาย', 'line'], category: ['หมวด', 'category'], ref: ['เลขOrder', 'เลขบิล', 'order', 'ref'], origin: ['ต้นทาง', 'origin'], destination: ['ปลายทาง', 'destination'], reqType: ['ประเภทรถ', 'Checker', 'reqtype'], pallets: ['พาเลท', 'pallets'], pieces: ['ชิ้น', 'pieces'], bills: ['บิล', 'จำนวนบิล', 'bills'], weightKg: ['น้ำหนัก(กก.)', 'น้ำหนัก', 'weight'], volumeCbm: ['ปริมาตร(คิว)', 'ปริมาตร', 'volume'], revenue: ['รายได้', 'ค่าขนส่ง', 'revenue'] } },
 };
 const NUMERIC = new Set(['capWeightKg', 'capVolumeCbm', 'capPallets', 'currentKm', 'lastServiceKm', 'radiusM', 'standardKm', 'allowance', 'toll', 'pallets', 'pieces', 'bills', 'weightKg', 'volumeCbm', 'revenue']);
 const normH = h => String(h || '').toLowerCase().replace(/[\s_\-().\/]/g, '');
@@ -1988,7 +2010,7 @@ function parseImport(entity, text) {
       else if (field === 'ownership') o[field] = /partner|สาขา|ร่วม/i.test(v) ? 'Partner' : 'SSC';
       else if (field === 'kind') o[field] = parseKind(v);
       else if (field === 'line') o[field] = parseLine(v);
-      else if (field === 'date') o[field] = parseDate(v);
+      else if (field === 'date' || field === 'dueDate') o[field] = parseDate(v);
       else if (field === 'coords') { const L = parseLoc(v); o.lat = L && L.lat !== null ? L.lat : null; o.lng = L && L.lat !== null ? L.lng : null; }
       else o[field] = v;
     }
@@ -2001,7 +2023,7 @@ const TEMPLATE = {
   drivers: ['ชื่อ-นามสกุล', 'ชื่อเล่น', 'เบอร์โทร'],
   sites: ['ชื่อจุด', 'สาย', 'ชื่อเรียกหน้างาน', 'พิกัด', 'รัศมี(ม.)'],
   routes: ['ชื่อเส้นทาง', 'ประเภทงาน', 'สาย', 'ต้นทาง', 'ปลายทาง', 'StandardKM', 'เบี้ยเลี้ยง', 'ทางด่วน'],
-  orders: ['วันที่โหลด', 'ลูกค้า', 'ประเภทงาน', 'สาย', 'หมวด', 'เลขOrder', 'ต้นทาง', 'ปลายทาง', 'ประเภทรถ', 'พาเลท', 'ชิ้น', 'บิล', 'น้ำหนัก(กก.)', 'ปริมาตร(คิว)', 'รายได้'],
+  orders: ['วันที่โหลด', 'กำหนดส่ง', 'ลูกค้า', 'ประเภทงาน', 'สาย', 'หมวด', 'เลขOrder', 'ต้นทาง', 'ปลายทาง', 'ประเภทรถ', 'พาเลท', 'ชิ้น', 'บิล', 'น้ำหนัก(กก.)', 'ปริมาตร(คิว)', 'รายได้'],
 };
 const ENTITY_NAME = { vehicles: 'รถ', drivers: 'คนขับ', sites: 'จุดเช็คอิน / สาขา', routes: 'เส้นทาง', orders: 'ออเดอร์' };
 function openImport(entity) {
@@ -2046,7 +2068,8 @@ function updateSortPreview(el) {
   const out = $('#srt-preview'); if (!out) return;
   const rows = parseSortRows(el.value);
   if (!el.value.trim()) { out.textContent = 'ยังไม่มีข้อมูล'; return; }
-  out.innerHTML = rows.length ? `<span class="chip good">${icon('check')}จะสร้าง ${rows.length} ออเดอร์</span> เช่น ${esc(rows.slice(0, 3).map(r => `นม${r.province} ${r.store}`).join(', '))}` : `<span class="chip warn">${icon('alert')}ยังอ่านไม่ได้</span> ต้องมีคอลัมน์ จังหวัด`;
+  const withDue = rows.filter(r => r.dueDate).length;
+  out.innerHTML = rows.length ? `<span class="chip good">${icon('check')}จะสร้าง ${rows.length} ออเดอร์</span> เช่น ${esc(rows.slice(0, 3).map(r => `นม${r.province} ${r.store}`).join(', '))}<br><span class="muted">มีกำหนดส่งในตาราง ${withDue} แถว${withDue < rows.length ? ` · อีก ${rows.length - withDue} แถวใช้กำหนดส่งด้านบน` : ''}</span>` : `<span class="chip warn">${icon('alert')}ยังอ่านไม่ได้</span> ต้องมีคอลัมน์ จังหวัด`;
 }
 
 /* ---------- trailers ---------- */
@@ -2165,6 +2188,7 @@ PAGES.pending = () => {
       <li><b>รัศมี:</b> 500 ม. นอกรัศมีติดธง</li>
       <li><b>ทะเบียนหลัก:</b> 18/22 ล้อใช้ทะเบียนหัว พร้อมทะเบียนหางและประเภทหาง · 10 ล้อใช้ทะเบียนรถ</li>
       <li><b>Standard KM:</b> นับเป็นขา (ขาลง / ขากลับ) ทริปหนึ่งรวมหลายขา · แยกสายเหนือกับสายใต้</li>
+      <li><b>กำหนดส่ง:</b> ออเดอร์ (โดยเฉพาะนมร้านค้าแยกตามจังหวัด/ร้าน) มีวันกำหนดส่งถึงลูกค้า ระบบเรียงงานที่ต้องถึงก่อนขึ้นก่อน และเตือนเมื่อใกล้/เลยกำหนด</li>
     </ol></div></section>
   <section class="sec"><h2>เรื่องที่ยังต้องถาม</h2>
     <div class="card pad doc"><ol>
@@ -2172,6 +2196,8 @@ PAGES.pending = () => {
       <li>สงขลา (ในเอกสาร V1 เป็นพื้นที่ Partner) ยังมีอยู่ไหม</li>
       <li>ขนาดลาเบล 100 × 75 มม. ตรงกับเครื่องพิมพ์ที่จะใช้ไหม</li>
       <li>ขากลับสายเหนือ ส่งงานกระดาษ/นมผงที่ไหนก่อนกลับนครสวรรค์</li>
+      <li>พัสดุรายบิล (ขนม / เบ็ดเตล็ด) ต้องมีวันกำหนดส่งด้วยไหม</li>
+      <li>ใช้เวลาวิ่งกี่วันต่อปลายทาง (เช่น สาย 3 → ภูเก็ต) เพื่อให้ระบบเตือนล่วงหน้าว่าออกรถวันไหนถึงจะทันกำหนดส่ง</li>
     </ol></div></section>
   <section class="sec"><h2>ระบบอื่นที่จะทำต่อ</h2>
     <div class="card pad doc"><ul>
@@ -2455,15 +2481,15 @@ function makeDemo() {
   ci('c7', 3, atToday(5, 40), { siteId: 'pump' }); ci('c8', 1, atToday(6, 5), { siteId: 'pump' }); ci('c9', 2, atToday(7, 20), { siteId: 'pump' });
   const tmr = addDays(today, 1);
   const ord = (id, o) => (d.orders[id] = { id, status: 'open', source: 'manual', createdAt: iso(now - 86400000), date: tmr, ...o });
-  ord('o1', { customer: 'Dairy Plus', kind: 'FH', line: 'north', ref: 'DP-ตย-201', origin: 'Dairy Plus นครสวรรค์', destination: 'เดโปพิษณุโลก', routeId: 'n-down-plk', reqType: '22', pallets: 20, pieces: 1600, bills: 1, weightKg: 24500, volumeCbm: 70, revenue: 14000 });
-  ord('o2', { customer: 'Dairy Plus', kind: 'FH', line: 'north', ref: 'DP-ตย-202', origin: 'Dairy Plus นครสวรรค์', destination: 'เดโปชลบุรี', routeId: 'n-down-cbi', reqType: '22', pallets: 20, pieces: 1580, bills: 1, weightKg: 24000, volumeCbm: 70, revenue: 21000 });
+  ord('o1', { dueDate: tmr, customer: 'Dairy Plus', kind: 'FH', line: 'north', ref: 'DP-ตย-201', origin: 'Dairy Plus นครสวรรค์', destination: 'เดโปพิษณุโลก', routeId: 'n-down-plk', reqType: '22', pallets: 20, pieces: 1600, bills: 1, weightKg: 24500, volumeCbm: 70, revenue: 14000 });
+  ord('o2', { dueDate: addDays(today, 2), customer: 'Dairy Plus', kind: 'FH', line: 'north', ref: 'DP-ตย-202', origin: 'Dairy Plus นครสวรรค์', destination: 'เดโปชลบุรี', routeId: 'n-down-cbi', reqType: '22', pallets: 20, pieces: 1580, bills: 1, weightKg: 24000, volumeCbm: 70, revenue: 21000 });
   ord('o3', { customer: 'Dairy Plus นมร้านค้า', kind: 'STORE', line: 'north', ref: 'DP-ตย-210', origin: 'Dairy Plus นครสวรรค์', destination: 'คลังพุทธมณฑลสาย 3', routeId: 'n-down-s3', reqType: '22', pallets: 18, pieces: 1450, bills: 1, weightKg: 22000, volumeCbm: 64, revenue: 16500 });
   ord('o4', { customer: 'กระดาษ ASA', kind: 'BH', line: 'north', ref: 'ASA-ตย-31', origin: 'สมุทรสาคร', destination: 'นครสวรรค์', routeId: 'n-bh-asa', reqType: '22', pallets: 16, pieces: 160, bills: 1, weightKg: 26000, volumeCbm: 40, revenue: 12000 });
   ord('o5', { customer: 'Dairy Plus นมร้านค้า', kind: 'STORE', line: 'north', ref: 'DP-ตย-198', origin: 'Dairy Plus นครสวรรค์', destination: 'คลังพุทธมณฑลสาย 3', routeId: 'n-down-s3', pallets: 18, pieces: 1400, bills: 1, weightKg: 21500, volumeCbm: 62, revenue: 16500, status: 'done', date: addDays(today, -1), sortedAt: iso(now - 3600000) });
-  ord('o6', { customer: 'นมชุมพร ร้านตัวอย่าง ก', kind: 'SOUTH', line: 'south', category: 'นมร้านค้า', origin: 'คลังพุทธมณฑลสาย 3', destination: 'ชุมพร', routeId: 's-cpn', reqType: '18', pallets: 4, pieces: 320, bills: 1, weightKg: 4800, volumeCbm: 14, revenue: 6200, parentId: 'o5', date: today });
-  ord('o7', { customer: 'นมสุราษฎร์ธานี ร้านตัวอย่าง ข', kind: 'SOUTH', line: 'south', category: 'นมร้านค้า', origin: 'คลังพุทธมณฑลสาย 3', destination: 'สุราษฎร์ธานี', routeId: 's-combo', reqType: '18', pallets: 5, pieces: 420, bills: 1, weightKg: 6300, volumeCbm: 18, revenue: 8400, parentId: 'o5', date: today });
-  ord('o8', { customer: 'นมนครศรีธรรมราช ร้านตัวอย่าง ค', kind: 'SOUTH', line: 'south', category: 'นมร้านค้า', origin: 'คลังพุทธมณฑลสาย 3', destination: 'นครศรีธรรมราช', routeId: 's-combo', reqType: '18', pallets: 4, pieces: 380, bills: 1, weightKg: 5600, volumeCbm: 16, revenue: 7800, parentId: 'o5', date: today });
-  ord('o9', { customer: 'อาหารยอดคุณ', kind: 'SOUTH', line: 'south', category: 'ลูกค้าสัญญา', ref: 'YK-ตย-118', origin: 'คลังพุทธมณฑลสาย 3', destination: 'ทุ่งสง', routeId: 's-combo', reqType: '18', pallets: 4, pieces: 220, bills: 3, weightKg: 5200, volumeCbm: 14, revenue: 7200, date: today });
+  ord('o6', { dueDate: today, customer: 'นมชุมพร ร้านตัวอย่าง ก', kind: 'SOUTH', line: 'south', category: 'นมร้านค้า', origin: 'คลังพุทธมณฑลสาย 3', destination: 'ชุมพร', routeId: 's-cpn', reqType: '18', pallets: 4, pieces: 320, bills: 1, weightKg: 4800, volumeCbm: 14, revenue: 6200, parentId: 'o5', date: today });
+  ord('o7', { dueDate: tmr, customer: 'นมสุราษฎร์ธานี ร้านตัวอย่าง ข', kind: 'SOUTH', line: 'south', category: 'นมร้านค้า', origin: 'คลังพุทธมณฑลสาย 3', destination: 'สุราษฎร์ธานี', routeId: 's-combo', reqType: '18', pallets: 5, pieces: 420, bills: 1, weightKg: 6300, volumeCbm: 18, revenue: 8400, parentId: 'o5', date: today });
+  ord('o8', { dueDate: addDays(today, 2), customer: 'นมนครศรีธรรมราช ร้านตัวอย่าง ค', kind: 'SOUTH', line: 'south', category: 'นมร้านค้า', origin: 'คลังพุทธมณฑลสาย 3', destination: 'นครศรีธรรมราช', routeId: 's-combo', reqType: '18', pallets: 4, pieces: 380, bills: 1, weightKg: 5600, volumeCbm: 16, revenue: 7800, parentId: 'o5', date: today });
+  ord('o9', { dueDate: addDays(today, 2), customer: 'อาหารยอดคุณ', kind: 'SOUTH', line: 'south', category: 'ลูกค้าสัญญา', ref: 'YK-ตย-118', origin: 'คลังพุทธมณฑลสาย 3', destination: 'ทุ่งสง', routeId: 's-combo', reqType: '18', pallets: 4, pieces: 220, bills: 3, weightKg: 5200, volumeCbm: 14, revenue: 7200, date: today });
   const trip = (id, o) => (d.trips[id] = { id, createdAt: iso(now - 86400000 * 2), approval: null, by: null, ...o });
   const job = (kind, routeId, customers, revenue, weightKg) => { const r = d.routes[routeId]; return { id: uid(), kind, routeId, origin: r.origin, destination: r.destination, customers, orderIds: [], revenue, weightKg, bills: kind === 'SOUTH' ? Math.round((revenue || 0) / 1800) : kind === 'EMPTY' ? null : 1 }; };
   const dates = [11, 10, 9, 8, 7, 6, 5, 4, 3].map(n => addDays(today, -n));
@@ -2484,7 +2510,7 @@ function makeDemo() {
     const js = jobs.map(j => job(...j));
     trip('t' + pad(i + 1), { no: `T${dates[i].slice(2, 4)}${dates[i].slice(5, 7)}${dates[i].slice(8, 10)}-0${(i % 2) + 1}`, date: dates[i], line: l === 'n' ? 'north' : 'south', vehicleId: vid, driverId: 'd' + vid.slice(1), trailerPlate: v.trailerPlate || null, checkinId: null, routeId: js[0].routeId, status: 'closed', jobs: js, standardKm: Math.round(km * [0.97, 0.99, 1.01, 0.96, 0.98, 1.0, 0.97, 0.95, 1.02][i] / 10) * 10, mileOut, mileIn, loadedKm: loaded, emptyKm, fuelLiters: liters, fuelPrice: price, fuelCost: null, feedCard: 'FC-ตย', allowance, toll, otherCost: null, departedAt: iso(depart), closedAt: iso(depart + (l === 'n' ? 1 : 2.4) * 86400000) });
   });
-  trip('t20', { no: `T${today.slice(2, 4)}${today.slice(5, 7)}${today.slice(8, 10)}-01`, date: today, line: 'south', vehicleId: 'v12', driverId: 'd12', trailerPlate: d.vehicles.v12.trailerPlate, checkinId: null, routeId: 's-combo', status: 'running', jobs: [job('SOUTH', 's-combo', 'นมร้านค้า', 22800, 13500), { id: uid(), kind: 'SOUTH', parcel: true, routeId: 's-combo', origin: 'คลังพุทธมณฑลสาย 3', destination: 'Partner ภูเก็ต → สาขาสุราษฎร์ธานี', customers: 'พัสดุรายบิล (ขนม / เบ็ดเตล็ด)', orderIds: [], revenue: null }], standardKm: 820, mileOut: d.vehicles.v12.currentKm, departedAt: iso(now - 5 * 3600000) });
+  trip('t20', { no: `T${today.slice(2, 4)}${today.slice(5, 7)}${today.slice(8, 10)}-01`, date: today, line: 'south', vehicleId: 'v12', driverId: 'd12', trailerPlate: d.vehicles.v12.trailerPlate, checkinId: null, routeId: 's-combo', status: 'running', jobs: [{ ...job('SOUTH', 's-combo', 'นมร้านค้า', 22800, 13500), dueDate: tmr }, { id: uid(), kind: 'SOUTH', parcel: true, routeId: 's-combo', origin: 'คลังพุทธมณฑลสาย 3', destination: 'Partner ภูเก็ต → สาขาสุราษฎร์ธานี', customers: 'พัสดุรายบิล (ขนม / เบ็ดเตล็ด)', orderIds: [], revenue: null }], standardKm: 820, mileOut: d.vehicles.v12.currentKm, departedAt: iso(now - 5 * 3600000) });
   trip('t21', { no: `T${today.slice(2, 4)}${today.slice(5, 7)}${today.slice(8, 10)}-02`, date: today, line: 'north', vehicleId: 'v05', driverId: 'd05', trailerPlate: d.vehicles.v05.trailerPlate, checkinId: null, routeId: 'n-down-s3', status: 'planned', jobs: [job('STORE', 'n-down-s3', 'Dairy Plus นมร้านค้า', 16500, 21000)], standardKm: 200 });
   d.trailers.tr1 = { id: 'tr1', trailerPlate: '70-9001', vehicleId: 'v07', driverId: 'd07', takenDate: addDays(today, -6), kmTaken: d.vehicles.v07.currentKm - 1900, trips: 'T-ตัวอย่าง', note: 'หางประจำเข้าซ่อมช่วงล่าง', status: 'out' };
   const pre = 'S' + today.slice(2, 4) + today.slice(5, 7) + today.slice(8, 10);
