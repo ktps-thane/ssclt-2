@@ -119,6 +119,7 @@ const MOCK = `(() => {
   await B.screenshot({ path: OUT + '/live-driver-assigned.png', fullPage: true });
 
   log('== snapshot during typing does not wipe the close-trip form ==');
+  await A.fill('#tf-cargo', '24000');
   await A.locator('form[data-form="depart"] button[type=submit]').click(); await A.waitForTimeout(400);
   await A.fill('#tc-loaded', '850');
   await A.locator('#tc-l').click();

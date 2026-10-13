@@ -30,7 +30,7 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   const go = async h => { await page.evaluate(x => (location.hash = x), h); await page.waitForTimeout(250); };
   const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const shot = async n => page.screenshot({ path: `${OUT}/${n}.png`, fullPage: true });
-  const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v3')));
+  const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v4')));
   const sheetOk = async () => { await page.locator('#sheet button[type=submit]').click(); await page.waitForTimeout(250); };
 
   log('== pages (demo, phone 390 & 360) ==');
@@ -58,6 +58,7 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
 
   log('== due dates ==');
   ok(/ต้องถึงลูกค้าวันนี้/.test(await page.locator('#main .list').first().textContent()), 'home flags an order due today that has no truck yet');
+  ok(/ยังไม่ได้แจ้งทะเบียนโรงงาน/.test(await page.locator('#main .list').first().textContent()), 'home flags a planned trip whose plate was not sent to the factory');
   await go('#orders');
   ok(/นมชุมพร/.test(await page.locator('#main .list .row').first().textContent()), 'orders sorted by due date (due today first)');
   ok(await page.locator('.row:has-text("นมชุมพร") .chip.crit:has-text("ต้องถึงลูกค้าวันนี้")').count() === 1, 'order row shows due-today chip');
@@ -96,6 +97,16 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   const recoN = await page.locator('.pick:has(.reco) .plate').first().textContent().catch(() => '');
   ok(recoN === '70-1002' || recoN === '70-1001', `recommended north truck is a 22-wheeler from the pump queue (${recoN})`);
   ok(await page.locator('button.pick .ln:has-text("สายใต้")').count() === 0, 'north filter hides south trucks');
+  ok(await page.locator('button.pick:not([disabled]):has(.plate:text-is("70-1004")) .chip.good:has-text("ว่างหลัง")').count() === 1, 'truck unloading at 08:00 is offered for a 10:00 load (2 h buffer)');
+  await page.fill('#dp-lt', '09:00'); await page.waitForTimeout(250);
+  ok(await page.locator('button.pick[disabled]:has(.plate:text-is("70-1004")) .chip.crit:has-text("ชนเวลาโหลด")').count() === 1, 'same truck blocked when the load time overlaps');
+  await page.fill('#dp-lt', '10:00'); await page.waitForTimeout(250);
+  await page.locator('label.pick:has-text("เดโปชลบุรี") input').check(); await page.waitForTimeout(200);
+  await page.locator('button.pick:not([disabled]):has(.plate:text-is("70-1001"))').click(); await page.waitForTimeout(200);
+  ok(await page.locator('.check.crit:has-text("น้ำหนักบรรทุก")').count() === 1, 'two full loads exceed the 30 t payload of a 22-wheeler');
+  await page.locator('button[data-act="createTrip"]').click(); await page.waitForTimeout(250);
+  ok(/น้ำหนักเกิน/.test(await page.locator('.errbox').textContent().catch(() => '')), 'over-weight trip cannot be created');
+  await page.locator('label.pick:has-text("เดโปชลบุรี") input').uncheck(); await page.waitForTimeout(200);
 
   log('== dispatch south with parcels ==');
   await page.locator('button[data-act="dpLine"][data-v="south"]').click(); await page.waitForTimeout(200);
@@ -104,7 +115,7 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   await page.locator('label.pick:has-text("นมชุมพร") input').check(); await page.waitForTimeout(200);
   ok(/เลยกำหนดส่ง/.test(await page.locator('.note.crit').first().textContent().catch(() => '')), 'warns when departure date is after the due date');
   await page.fill('#dp-date', await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })); await page.waitForTimeout(250);
-  ok(/วันเดียวกับกำหนดส่ง/.test(await page.locator('.note.warn').first().textContent().catch(() => '')), 'same-day departure gets a softer warning');
+  ok(/ไม่ถึง 3 วัน|วันเดียวกับกำหนดส่ง/.test(await page.locator('.note.warn').first().textContent().catch(() => '')), 'departure too close to the due date gets a warning (hub needs up to 3 days)');
   const tot = await page.locator('#dp-totals').textContent();
   ok(/2\s*พัสดุ/.test(tot) || /\+ 2 พัสดุ/.test(tot), 'totals include parcels: ' + tot.replace(/\s+/g, ' '));
   await page.locator('.pick:has(.reco)').first().click(); await page.waitForTimeout(200);
@@ -154,6 +165,11 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
 
   log('== receive parcel + labels ==');
   await go('#receive');
+  ok((await page.inputValue('#rc-due')) !== '', 'misc parcel gets a default due date (+3 days)');
+  await page.locator('input[name="rc-cat"][value="ขนม"]').check(); await page.waitForTimeout(250);
+  ok((await page.inputValue('#rc-due')) === '' && (await page.inputValue('#rc-sn')) === 'อาหารยอดคุณ', 'snack contract clears due date (from bill) and fills the sender');
+  await page.locator('input[name="rc-cat"][value="เบ็ดเตล็ด"]').check(); await page.waitForTimeout(250);
+  await page.fill('#rc-sn', '');
   await page.locator('form[data-form="receive"] button[type=submit]').click(); await page.waitForTimeout(200);
   ok(/กรอกให้ครบ/.test(await page.locator('.errbox').textContent().catch(() => '')), 'receive form validates');
   await page.fill('#rc-sn', 'ร้านทดสอบส่ง'); await page.fill('#rc-sp', '0811111111');
@@ -168,6 +184,7 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   ok(await page.locator('.label svg.bc rect').count() > 20, 'barcodes drawn on labels');
   const trk = (await page.locator('h2.trk').textContent()).trim();
   ok(/^S\d{10}$/.test(trk), 'tracking number format ' + trk);
+  ok(/ส่งภายใน/.test(await page.locator('.label').first().textContent()), 'label shows the due date');
   await shot('m-parcel-labels');
   const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.locator('button[data-act="labelsPdf"]').click()]);
   const pth = await dl.path(); const buf = fs.readFileSync(pth);
@@ -190,9 +207,24 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   ok(kids.length === 2 && kids.some(o => o.customer === 'นมภูเก็ต ร้านทดสอบ A' && o.kind === 'SOUTH' && o.line === 'south'), 'creates south orders named นม+จังหวัด+ร้าน');
   ok(kids.find(o => o.customer.includes('ร้านทดสอบ A')).dueDate === '2026-10-20' && kids.find(o => o.customer.includes('ร้านทดสอบ B')).dueDate === '2026-10-21', 'due date from the table (Thai year) or the default');
 
+  log('== factory notice ==');
+  await go('#trips');
+  ok(await page.locator('h2:has-text("แจ้งทะเบียนโรงงาน")').count() === 1 && /แจ้งทะเบียนรถเข้าโหลด/.test(await page.locator('pre').first().textContent()), 'trips page lists plates to send to the factory');
+  await page.locator('button[data-act="notifyGroup"]').first().click(); await page.waitForTimeout(300);
+  dd = await demo();
+  ok(!!dd.trips.t21.notifiedAt, 'marked as sent to the factory');
+  await go('#trip-t20');
+  ok(await page.locator('h2:has-text("แจ้งทะเบียนโรงงาน")').count() === 0, 'a trip loading at the company warehouse (สาย 3) needs no factory notice');
+
   log('== north trip legs + close ==');
   await go('#trip-t21');
   await page.locator('form[data-form="depart"] button[type=submit]').click(); await page.waitForTimeout(300);
+  ok(/น้ำหนักสินค้าจริง/.test(await page.locator('form[data-form="depart"] .errbox').textContent().catch(() => '')), 'cannot depart without the actual loaded weight');
+  await page.fill('#tf-cargo', '29000'); await page.locator('form[data-form="depart"] button[type=submit]').click(); await page.waitForTimeout(300);
+  ok(/เกินที่รถ 18 ล้อบรรทุกได้/.test(await page.locator('form[data-form="depart"] .errbox').textContent().catch(() => '')), 'cargo above 28 t blocked for an 18-wheeler');
+  await page.fill('#tf-cargo', '21000'); await page.fill('#tf-gross', '46000'); await page.locator('form[data-form="depart"] button[type=submit]').click(); await page.waitForTimeout(300);
+  ok(/เกินกฎหมาย/.test(await page.locator('form[data-form="depart"] .errbox').textContent().catch(() => '')), 'weighbridge total above 45 t blocked');
+  await page.fill('#tf-gross', '36500'); await page.locator('form[data-form="depart"] button[type=submit]').click(); await page.waitForTimeout(300);
   await page.locator('button[data-act="addJob"]').click(); await page.waitForTimeout(200);
   await page.selectOption('#f-kind', 'EMPTY'); await page.selectOption('#f-routeId', 'n-empty-skn'); await sheetOk();
   await page.locator('button[data-act="addJob"]').click(); await page.waitForTimeout(200);
@@ -203,6 +235,11 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   const mo = dd.trips.t21.mileOut;
   await page.fill('#tc-in', String(mo + 9000)); await page.locator('form[data-form="closeTrip"] button[type=submit]').click(); await page.waitForTimeout(300);
   ok(/ผิดปกติ/.test(await page.locator('form[data-form="closeTrip"] .errbox').textContent().catch(() => '')), 'odd mileage needs confirmation');
+  await page.fill('#tc-in', String(mo + 512)); await page.fill('#tc-loaded', '460');
+  await page.locator('form[data-form="closeTrip"] button[type=submit]').click(); await page.waitForTimeout(300);
+  ok(/น้ำหนักจริงของงานขากลับ/.test(await page.locator('form[data-form="closeTrip"] .errbox').textContent().catch(() => '')), 'back-haul needs its actual weight before closing');
+  await page.locator('button[data-act="jobWeight"]').click(); await page.waitForTimeout(200);
+  await page.fill('#f-actualKg', '25500'); await sheetOk();
   await page.fill('#tc-in', String(mo + 512)); await page.fill('#tc-loaded', '460');
   await page.locator('form[data-form="closeTrip"] button[type=submit]').click(); await page.waitForTimeout(300);
   ok(await page.locator('.chip:has-text("ปิดทริปแล้ว")').count() >= 1, 'north trip closed');
