@@ -30,7 +30,7 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   const go = async h => { await page.evaluate(x => (location.hash = x), h); await page.waitForTimeout(250); };
   const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const shot = async n => page.screenshot({ path: `${OUT}/${n}.png`, fullPage: true });
-  const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v4')));
+  const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v5')));
   const sheetOk = async () => { await page.locator('#sheet button[type=submit]').click(); await page.waitForTimeout(250); };
 
   log('== pages (demo, phone 390 & 360) ==');
@@ -107,6 +107,9 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   await page.locator('button[data-act="createTrip"]').click(); await page.waitForTimeout(250);
   ok(/น้ำหนักเกิน/.test(await page.locator('.errbox').textContent().catch(() => '')), 'over-weight trip cannot be created');
   await page.locator('label.pick:has-text("เดโปชลบุรี") input').uncheck(); await page.waitForTimeout(200);
+  await page.locator('label.pick:has-text("เดโปพิษณุโลก") input').uncheck(); await page.locator('label.pick:has-text("กระดาษ ASA") input').check(); await page.waitForTimeout(250);
+  ok(await page.locator('button.pick[disabled]:has(.plate:text-is("70-1004")) .chip:has-text("จับคู่เวลาได้เฉพาะงานโหลดที่ Dairy Plus นครสวรรค์")').count() === 1, 'unload→load time matching only for loads at Dairy Plus นครสวรรค์ (ASA load keeps a busy truck blocked)');
+  await page.locator('label.pick:has-text("กระดาษ ASA") input').uncheck(); await page.waitForTimeout(150);
 
   log('== dispatch south with parcels ==');
   await page.locator('button[data-act="dpLine"][data-v="south"]').click(); await page.waitForTimeout(200);
@@ -116,6 +119,9 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   ok(/เลยกำหนดส่ง/.test(await page.locator('.note.crit').first().textContent().catch(() => '')), 'warns when departure date is after the due date');
   await page.fill('#dp-date', await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })); await page.waitForTimeout(250);
   ok(/ไม่ถึง 3 วัน|วันเดียวกับกำหนดส่ง/.test(await page.locator('.note.warn').first().textContent().catch(() => '')), 'departure too close to the due date gets a warning (hub needs up to 3 days)');
+  const tmrKey = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+  ok((await page.inputValue('#dp-arr').catch(() => '')) === tmrKey && /07:00/.test(await page.locator('label[for="dp-arr"]').textContent()), 'south load asks for the hub arrival date (before 07:00, default next morning)');
+  ok(await page.locator('button.pick[disabled]:has(.plate:text-is("70-1012")) .chip:has-text("จับคู่เวลาได้เฉพาะ")').count() === 1, 'busy south truck is not time-matched (rule is Dairy Plus only)');
   const tot = await page.locator('#dp-totals').textContent();
   ok(/2\s*พัสดุ/.test(tot) || /\+ 2 พัสดุ/.test(tot), 'totals include parcels: ' + tot.replace(/\s+/g, ' '));
   await page.locator('.pick:has(.reco)').first().click(); await page.waitForTimeout(200);
@@ -134,6 +140,7 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   const tripId = h.slice(6);
   let dd = await demo();
   ok(dd.parcels.p1.tripId === tripId && dd.parcels.p2.tripId === tripId, 'parcels assigned to the new trip');
+  ok(dd.trips[tripId].arriveDate === tmrKey, 'south trip stores the hub arrival date');
   ok(await page.locator('.row:has-text("พัสดุรายบิล")').count() === 1, 'trip shows parcel job');
 
   log('== scan station ==');
@@ -153,6 +160,8 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   await page.locator('button[data-act="scanMode"][data-v="arrived"]').click(); await page.waitForTimeout(200);
   await page.selectOption('#sc-br', 'br-hkt');
   ok(/ถึงปลายทาง 3\/3/.test(await scan(no1)), 'arrival scan for all boxes');
+  dd = await demo();
+  ok(!!(dd.trips[tripId].arr && dd.trips[tripId].arr['b_br-hkt'] && dd.trips[tripId].arr['b_br-hkt'].src === 'scan'), 'arrival scan at the hub records the truck arrival time for that stop');
   await page.locator('button[data-act="scanMode"][data-v="delivered"]').click(); await page.waitForTimeout(200);
   await scan(no1);
   ok(await page.locator('button[data-act="scanDeliver"]').count() === 1, 'deliver mode asks for receiver name');
@@ -215,6 +224,80 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   ok(!!dd.trips.t21.notifiedAt, 'marked as sent to the factory');
   await go('#trip-t20');
   ok(await page.locator('h2:has-text("แจ้งทะเบียนโรงงาน")').count() === 0, 'a trip loading at the company warehouse (สาย 3) needs no factory notice');
+
+  log('== running trucks: where now + hub arrival before 07:00 ==');
+  await go('#home');
+  ok(await page.locator('h2:has-text("รถกำลังวิ่ง")').count() === 1, 'home has a running-trucks board');
+  const run12 = await page.locator('#main .row:has(.plate:text-is("70-1012")):has-text("ต่อไป")').first().textContent().catch(() => '');
+  ok(/อ\.บางสะพาน จ\.ประจวบคีรีขันธ์/.test(run12) && /ต่อไป สาขาชุมพร/.test(run12) && /คลังพุทธมณฑลสาย 3/.test(run12), 'running row shows origin → stops, current อำเภอ/จังหวัด and next hub: ' + run12.replace(/\s+/g, ' ').slice(0, 160));
+  await go('#trip-t20');
+  ok(await page.locator('h2:has-text("ตำแหน่งและจุดส่ง")').count() === 1, 'trip detail has a position + stops card');
+  const stopTxt = await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง")) .list').textContent();
+  ok(['สาขาชุมพร', 'สาขาสุราษฎร์ธานี', 'สาขาทุ่งสง', 'สาขานครศรีธรรมราช'].every(x => stopTxt.includes(x)) && (stopTxt.match(/07:00/g) || []).length >= 4, 'southern stops resolved to hubs, each due before 07:00');
+  const posSubmit = async (field, val) => {
+    const det = page.locator('details:has(form[data-form="pos"])'); if (await det.count() && !(await det.evaluate(e => e.open))) await det.locator('summary').click();
+    await page.fill(`#pf-${field}-t20`, val); await page.locator('form[data-form="pos"] button[type=submit]').click(); await page.waitForTimeout(250);
+    return (await demo()).trips.t20;
+  };
+  let t20 = await posSubmit('loc', '9.1382, 99.3215');
+  ok(t20.pos.district === 'เมืองสุราษฎร์ธานี' && t20.pos.province === 'สุราษฎร์ธานี' && t20.pos.src === 'map' && t20.posLog.length === 4, 'pasted coordinates → อ.เมืองสุราษฎร์ธานี จ.สุราษฎร์ธานี');
+  t20 = await posSubmit('loc', 'https://www.google.com/maps/@7.0086,100.4747,15z');
+  ok(t20.pos.district === 'หาดใหญ่' && t20.pos.province === 'สงขลา', 'Google Maps link → อ.หาดใหญ่ จ.สงขลา');
+  t20 = await posSubmit('loc', '8.1636, 99.6800');
+  ok(t20.pos.district === 'ทุ่งสง' && t20.pos.province === 'นครศรีธรรมราช', 'Thung Song coordinates → อ.ทุ่งสง');
+  t20 = await posSubmit('loc', '13.7563, 100.5018');
+  ok(t20.pos.province === 'กรุงเทพมหานคร' && /เขต.+กรุงเทพฯ/.test(await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง"))').textContent()), 'Bangkok shows as เขต… กรุงเทพฯ');
+  await posSubmit('loc', '1.3521, 103.8198');
+  ok(/นอกประเทศไทย/.test(await page.locator('form[data-form="pos"] .errbox').textContent().catch(() => '')), 'coordinates outside Thailand rejected');
+  await page.fill('#pf-loc-t20', '');
+  t20 = await posSubmit('place', 'อ.ท่าชนะ จ.สุราษฎร์ธานี');
+  ok(t20.pos.district === 'ท่าชนะ' && t20.pos.src === 'manual' && t20.pos.lat === null, 'district picked from the list (when calling the driver)');
+  await posSubmit('place', 'อำเภอที่ไม่มีจริง');
+  ok(/ไม่พบชื่ออำเภอ/.test(await page.locator('form[data-form="pos"] .errbox').textContent().catch(() => '')), 'unknown district rejected');
+  await page.locator('button[data-act="stopArrive"][data-k="b_br-cpn"]').click(); await page.waitForTimeout(250);
+  t20 = (await demo()).trips.t20;
+  ok(!!(t20.arr && t20.arr['b_br-cpn'] && t20.arr['b_br-cpn'].at), 'dispatcher marks arrival at สาขาชุมพร');
+  ok(await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง")) .row:has-text("สาขาชุมพร") .chip.good:has-text("ถึงแล้ว")').count() === 1, 'arrived before 07:00 shows as on time');
+  await page.locator('button[data-act="stopUndo"][data-k="b_br-cpn"]').click(); await page.waitForTimeout(250);
+  ok(!((await demo()).trips.t20.arr || {})['b_br-cpn'], 'arrival can be undone');
+  await page.locator('button[data-act="stopArrive"][data-k="b_br-cpn"]').click(); await page.waitForTimeout(250);
+  const d2 = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 2); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+  await page.fill('#ad-t20', d2); await page.locator('form[data-form="arrDate"] button[type=submit]').click(); await page.waitForTimeout(250);
+  ok((await demo()).trips.t20.arriveDate === d2, 'hub arrival date can be changed on the trip');
+  await shot('m-trip-track');
+  // late: due date already passed and the truck has not reached สุราษฎร์
+  await page.evaluate(() => { const k = 'ssc-demo-data-v5'; const x = JSON.parse(localStorage.getItem(k)); const d = new Date(); d.setDate(d.getDate() - 1); x.trips.t20.arriveDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; x.trips.t20.date = x.trips.t20.arriveDate; localStorage.setItem(k, JSON.stringify(x)); });
+  await page.reload(); await page.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
+  await go('#home');
+  if (await page.locator('button[data-act="homeAllAtt"]').count()) { await page.locator('button[data-act="homeAllAtt"]').click(); await page.waitForTimeout(200); }
+  ok(await page.locator('#main .list .row:has-text("ยังไม่ถึง สาขาสุราษฎร์ธานี") .chip.crit').count() === 1, 'home flags a truck that missed the 07:00 hub time');
+  ok(/เข้าสาขาทันก่อน 07:00 น\.\s*\d+%/.test(await page.locator('#main').textContent()), 'monthly on-time hub arrival rate shown');
+  await shot('m-home-running');
+  await page.evaluate(() => { const k = 'ssc-demo-data-v5'; const x = JSON.parse(localStorage.getItem(k)); const d = new Date(); x.trips.t20.date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; delete x.trips.t20.arriveDate; localStorage.setItem(k, JSON.stringify(x)); localStorage.setItem('ssc-me', JSON.stringify({ driverId: 'd12', vehicleId: 'v12', siteId: 's3' })); });
+  await page.reload(); await page.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
+  await go('#checkin');
+  ok(await page.locator('h2:has-text("ทริปของฉัน")').count() === 1 && await page.locator('button[data-act="posGps"]').count() === 1, 'driver page shows my running trip with a send-position button');
+  const nextBtn = page.locator('section:has(h2:has-text("ทริปของฉัน")) button[data-act="stopArrive"]');
+  ok(/ถึง สาขาสุราษฎร์ธานี แล้ว/.test(await nextBtn.textContent().catch(() => '')), 'driver gets a one-tap "arrived" for the next hub');
+  await nextBtn.click(); await page.waitForTimeout(250);
+  ok(!!((await demo()).trips.t20.arr || {})['b_br-srt'], 'driver arrival saved');
+  let gpsOk = false;
+  try { await ctx.grantPermissions(['geolocation']); await ctx.setGeolocation({ latitude: 8.4304, longitude: 99.9631, accuracy: 20 }); gpsOk = true; } catch {}
+  if (gpsOk) {
+    await page.locator('button[data-act="posGps"]').click(); await page.waitForTimeout(1200);
+    const g = (await demo()).trips.t20.pos;
+    ok(g.src === 'gps' && g.province === 'นครศรีธรรมราช', 'GPS position saved with district (' + g.district + ' / ' + g.province + ')');
+  } else log('  (skip GPS: browser context has no geolocation permission)');
+  await shot('m-driver-trip');
+  await page.evaluate(() => localStorage.removeItem('ssc-me'));
+  await go('#home'); await page.reload(); await page.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
+
+  log('== settings: time rules ==');
+  await go('#settings');
+  ok((await page.inputValue('#s-tm')) === 'Dairy Plus นครสวรรค์' && (await page.inputValue('#s-arr')) === '07:00', 'settings show the Dairy Plus time-matching point and the 07:00 hub time');
+  await page.fill('#s-arr', '06:30'); await page.locator('form[data-form="settings"] button[type=submit]').click(); await page.waitForTimeout(250);
+  ok((await demo()).config.settings.southArriveBy === '06:30', 'hub arrival time is editable');
+  await go('#settings'); await page.fill('#s-arr', '07:00'); await page.locator('form[data-form="settings"] button[type=submit]').click(); await page.waitForTimeout(250);
 
   log('== north trip legs + close ==');
   await go('#trip-t21');

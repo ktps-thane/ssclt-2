@@ -136,6 +136,18 @@ const MOCK = `(() => {
   st = await store();
   ok(st['config/settings'] && st['config/settings'].minRevenue['22'] === 31000, 'config/settings document written');
 
+  log('== driver phone sends position, dispatcher sees the district ==');
+  await B.bringToFront(); await go(B, '#checkin'); await B.waitForTimeout(200);
+  ok(await B.locator('h2:has-text("ทริปของฉัน")').count() === 1, 'driver tab shows the running trip');
+  await B.fill('form[data-form="pos"] input[name="loc"]', '9.1382, 99.3215');
+  await B.locator('form[data-form="pos"] button[type=submit]').click(); await B.waitForTimeout(400);
+  st = await store();
+  const tr = Object.entries(st).find(([k]) => k.startsWith('trips/'))[1];
+  ok(tr.pos && tr.pos.district === 'เมืองสุราษฎร์ธานี' && tr.pos.by === 'u_test', 'position stored on the trip with district and viewer id');
+  await A.bringToFront(); await go(A, '#home'); await A.waitForTimeout(300);
+  ok(/อ\.เมืองสุราษฎร์ธานี จ\.สุราษฎร์ธานี/.test(await A.locator('section:has(h2:has-text("รถกำลังวิ่ง"))').textContent()), 'dispatcher home shows where the truck is now');
+  await B.screenshot({ path: OUT + '/live-driver-trip.png', fullPage: true });
+
   log('== parcel received on one screen, scanned at destination on another ==');
   await go(A, '#receive');
   await A.fill('#rc-sn', 'ผู้ส่ง ก'); await A.fill('#rc-sp', '0811111111'); await A.fill('#rc-rn', 'ผู้รับ ข'); await A.fill('#rc-rp', '0822222222');
