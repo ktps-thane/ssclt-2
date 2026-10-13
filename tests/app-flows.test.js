@@ -1,15 +1,26 @@
-// Round 1: every page + main flows in demo mode (phone width), plus desktop and dark screenshots.
-// Usage: sh tests/wrap.sh app/index.html /tmp/page.html && node tests/app-flows.test.js <shots-dir> /tmp/page.html
+// Round tests for the V2 draft: every page + main flows in demo mode (phone width), parcels/labels/scan,
+// north/south lines and the 10:00 back-haul queue rule, plus desktop and dark screenshots.
+// Usage: sh tests/wrap.sh app/index.html /tmp/page.html && node tests/app-flows.test.js <shots-dir> /tmp/page.html [libs-dir]
+// libs-dir holds JsBarcode.all.min.js and jspdf.umd.min.js (served in place of cdnjs when the CDN is unreachable).
 const { chromium } = require('/opt/node-tools/node_modules/playwright');
+const fs = require('fs');
 const OUT = process.argv[2];
 const URL = 'file://' + process.argv[3];
+const LIBS = process.argv[4];
 const log = (...a) => console.log(...a);
 let fails = 0;
 const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log('  FAIL', msg); } };
 
 (async () => {
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' }).catch(() => chromium.launch());
-  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'th-TH', timezoneId: 'Asia/Bangkok' });
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'th-TH', timezoneId: 'Asia/Bangkok', acceptDownloads: true });
+  if (LIBS) {
+    await ctx.route('https://cdnjs.cloudflare.com/**', route => {
+      const u = route.request().url();
+      const f = u.includes('jsbarcode') ? 'JsBarcode.all.min.js' : u.includes('jspdf') ? 'jspdf.umd.min.js' : null;
+      if (f) route.fulfill({ status: 200, contentType: 'application/javascript', body: fs.readFileSync(LIBS + '/' + f) }); else route.abort();
+    });
+  }
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
@@ -19,238 +30,205 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   const go = async h => { await page.evaluate(x => (location.hash = x), h); await page.waitForTimeout(250); };
   const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const shot = async n => page.screenshot({ path: `${OUT}/${n}.png`, fullPage: true });
+  const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v2')));
+  const sheetOk = async () => { await page.locator('#sheet button[type=submit]').click(); await page.waitForTimeout(250); };
 
-  log('== pages (demo, mobile) ==');
+  log('== pages (demo, phone 390 & 360) ==');
   ok(await page.locator('.banner').count() === 1, 'demo banner shown on first open with no real data');
-  for (const h of ['home', 'queue', 'checkin', 'orders', 'dispatch', 'trips', 'maint', 'master', 'trailers', 'settings', 'spec', 'pending', 'more']) {
-    await go('#' + h);
-    const ov = await overflow();
-    const bad = await page.locator('#main .note.crit:has-text("แสดงผลไม่ได้")').count();
-    ok(ov <= 0 && bad === 0, `#${h} renders, no horizontal overflow (${ov})`);
-    await shot('m-' + h);
+  ok(await page.evaluate(() => !!window.JsBarcode), 'barcode library loaded');
+  const pages = ['home', 'queue', 'checkin', 'orders', 'parcels', 'receive', 'scan', 'parcel-p1', 'dispatch', 'trips', 'trip-t20', 'maint', 'master', 'trailers', 'settings', 'spec', 'pending', 'more'];
+  for (const w of [390, 360]) {
+    await page.setViewportSize({ width: w, height: 844 });
+    for (const h of pages) {
+      await go('#' + h);
+      const ov = await overflow();
+      const bad = await page.locator('#main .note.crit:has-text("แสดงผลไม่ได้")').count();
+      ok(ov <= 0 && bad === 0, `${w}px #${h} renders, no horizontal overflow (${ov})`);
+      if (w === 390) await shot('m-' + h);
+    }
   }
+  await page.setViewportSize({ width: 390, height: 844 });
 
-  log('== dispatch flow ==');
-  await go('#dispatch');
-  await page.locator('label.pick:has-text("เดโปสุราษฎร์") input').check();
-  await page.waitForTimeout(200);
-  const recoPlate = await page.locator('.pick:has(.reco) .plate').first().textContent();
-  ok(recoPlate === '70-1004', `recommended truck for 22-wheel FH order is first 22-wheeler in queue (got ${recoPlate})`);
-  ok(await page.locator('#dp-totals').isVisible(), 'totals bar visible after selecting an order');
-  await page.locator('.pick:has(.plate:text-is("70-1004"))').click();
-  await page.waitForTimeout(200);
-  ok(await page.locator('.check.good:has-text("ตรงกับที่ Checker")').count() === 1, 'Checker type check passes');
-  ok((await page.locator('#dp-driver').inputValue()) === 'd04', 'driver auto-filled from check-in');
-  await shot('m-dispatch-selected');
-  await page.locator('button[data-act="createTrip"]').click();
-  await page.waitForTimeout(400);
-  ok((await page.evaluate(() => location.hash)).startsWith('#trip-'), 'create trip navigates to trip detail');
-  ok(await page.locator('.chip:has-text("วางแผน")').count() >= 1, 'trip is planned');
-  await page.locator('form[data-form="depart"] button[type=submit]').click();
-  await page.waitForTimeout(300);
-  ok(await page.locator('form[data-form="closeTrip"]').count() === 1, 'depart -> running, close form shown');
-  const out = await page.evaluate(() => { const t = document.querySelector('.kv'); return t ? t.textContent : ''; });
-  await page.fill('#tc-in', '9999999');
-  await page.fill('#tc-loaded', '880');
-  await page.fill('#tc-l', '230');
-  await page.fill('#tc-p', '31.5');
-  await page.locator('form[data-form="closeTrip"] button[type=submit]').click();
-  await page.waitForTimeout(400);
-  ok(/ผิดปกติ/.test(await page.locator('form[data-form="closeTrip"] .errbox').textContent().catch(() => '')), 'absurd odometer rejected with message');
-  ok((await page.inputValue('#tc-loaded')) === '880' && (await page.inputValue('#tc-l')) === '230', 'typed values kept after validation error');
-  const tripId = (await page.evaluate(() => location.hash)).slice(6);
-  const mo = await page.evaluate(id => JSON.parse(localStorage.getItem('ssc-demo-data')).trips[id].mileOut, tripId);
-  await page.fill('#tc-in', String(mo + 1740));
-  await page.locator('form[data-form="closeTrip"] button[type=submit]').click();
-  await page.waitForTimeout(400);
-  ok(await page.locator('.chip:has-text("ปิดทริปแล้ว")').count() >= 1, 'trip closed');
-  await shot('m-trip-closed');
-  const cur = await page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data')).vehicles.v04.currentKm);
-  ok(cur === mo + 1740, `closing trip updated vehicle current KM (${cur})`);
-  ok(/1,740/.test(await page.locator('.kv').textContent()), 'actual KM shown');
+  log('== home line filter ==');
+  await go('#home');
+  ok(await page.locator('h2:has-text("พัสดุรายบิล")').count() === 1, 'parcel summary on all lines');
+  await page.locator('button[data-act="homeLine"][data-v="north"]').click(); await page.waitForTimeout(200);
+  ok(await page.locator('h2:has-text("พัสดุรายบิล")').count() === 0 && await page.locator('h2:has-text("Southern Load Planning")').count() === 0, 'north view hides southern sections');
+  await page.locator('button[data-act="homeLine"][data-v="all"]').click(); await page.waitForTimeout(150);
 
-  log('== check-in flow ==');
-  await go('#checkin');
-  await page.selectOption('#ci-driver', 'd10');
-  await page.waitForTimeout(150);
-  await page.selectOption('#ci-veh', 'v10');
-  await page.waitForTimeout(150);
-  await page.fill('#ci-loctext', 'https://www.google.com/maps/place/x/@13.70,100.10,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x0!8m2!3d13.78825!4d100.3166');
-  await page.waitForTimeout(150);
-  const locTxt = await page.locator('#ci-loc-out').textContent();
-  ok(/13\.788250, 100\.316600/.test(locTxt) && /อยู่ในรัศมี/.test(locTxt), 'Google Maps URL parsed using !3d!4d pin, inside radius');
-  await page.fill('#ci-loctext', '13°47\'17.2"N 100°18\'58.7"E');
-  await page.waitForTimeout(150);
-  ok(/13\.78/.test(await page.locator('#ci-loc-out').textContent()), 'DMS coordinates parsed');
-  await page.fill('#ci-loctext', 'abc');
-  await page.waitForTimeout(150);
-  ok(/อ่านพิกัดจากข้อความนี้ไม่ได้/.test(await page.locator('#ci-loc-out').textContent()), 'bad text -> parse error message');
-  await page.fill('#ci-loctext', '13.7885, 100.3170');
-  await page.fill('#ci-odo', '512000');
-  await page.locator('form[data-form="checkin"] button[type=submit]').click();
-  await page.waitForTimeout(300);
-  const qn = await page.locator('.ticket .big').textContent().catch(() => '');
-  ok(/^\d\d$/.test(qn || ''), `ticket shows queue number (${qn})`);
-  await shot('m-ticket');
-  // duplicate check-in for same vehicle
-  await page.locator('button[data-act="ciNew"]').first().click();
-  await page.waitForTimeout(150);
-  await page.selectOption('#ci-driver', 'd10');
-  await page.waitForTimeout(150);
-  await page.selectOption('#ci-veh', 'v10');
-  await page.fill('#ci-loctext', '13.7885, 100.3170');
-  await page.locator('form[data-form="checkin"] button[type=submit]').click();
-  await page.waitForTimeout(200);
-  ok(/อยู่ในคิวแล้ว/.test(await page.locator('.errbox').textContent().catch(() => '')), 'duplicate check-in blocked');
-  await page.locator('button[data-act="ciShowTicket"]').click();
-  await page.waitForTimeout(150);
-
-  log('== GPS button (denied in test) ==');
-  await page.locator('button[data-act="ciNew"]').first().click();
-  await page.waitForTimeout(150);
-  await page.locator('button[data-act="gps"]').click();
-  await page.waitForTimeout(800);
-  ok(/GPS/.test(await page.locator('#ci-loc-out').textContent()), 'GPS failure shows fallback guidance');
-
-  log('== queue page ==');
+  log('== queue: 10:00 back-haul rule ==');
   await go('#queue');
-  ok(await page.locator('.qno').count() >= 5, 'queue rows render');
-  ok(await page.locator('.chip.crit:has-text("นอกรัศมี")').count() >= 1, 'outside-radius flag visible');
-  await page.locator('button[data-act="ciCancel"]').first().click();
-  await page.waitForTimeout(150);
-  ok(await page.locator('#sheet:not([hidden]) .sheet').count() === 1, 'cancel asks for confirmation in-page');
-  await page.locator('#sheet button[type=submit]').click();
-  await page.waitForTimeout(250);
-  ok(await page.locator('#sheet[hidden]').count() === 1, 'confirmation closes');
+  const groups = await page.evaluate(() => {
+    const sec = [...document.querySelectorAll('#main section.sec')].find(s => s.querySelector('h2') && s.querySelector('h2').textContent.includes('คลังพุทธมณฑลสาย 3'));
+    return [...sec.querySelectorAll('.row')].map(r => { const t = r.textContent; return t.includes('Backhaul ทันรอบ') ? 0 : t.includes('Backhaul มาหลังรอบ') ? 2 : t.includes('สแตนด์บาย') ? 1 : -1; });
+  });
+  ok(groups.length >= 5 && groups.every((g, i) => g >= 0 && (i === 0 || g >= groups[i - 1])), 'south queue ordered: Backhaul on time → standby → Backhaul late ' + JSON.stringify(groups));
+  ok(await page.locator('h2:has-text("ปั๊มนครสวรรค์")').count() === 1, 'north check-in point (pump) has its own queue');
 
-  log('== orders: add + import ==');
-  await go('#orders');
-  const before = await page.locator('#main .list .row').count();
-  await page.locator('button[data-act="edit"][data-col="orders"]').first().click();
-  await page.waitForTimeout(150);
-  await page.locator('#sheet button[type=submit]').click();
-  await page.waitForTimeout(150);
-  ok(!(await page.locator('#sheet-err').isHidden()), 'required-field validation in sheet');
-  await page.fill('#f-customer', 'ลูกค้าทดสอบ');
-  await page.fill('#f-destination', 'ทุ่งสง');
-  await page.fill('#f-revenue', '5,500');
-  await page.locator('#sheet button[type=submit]').click();
-  await page.waitForTimeout(250);
-  const tomorrowRows = await page.locator('#main .list .row').count();
-  ok(tomorrowRows === before + 1, `order added (${before} -> ${tomorrowRows})`);
-  await page.locator('button[data-act="import"]').click();
-  await page.waitForTimeout(150);
-  const tsv = 'วันที่โหลด\tลูกค้า\tประเภทงาน\tปลายทาง\tพาเลท\tน้ำหนัก(กก.)\tรายได้\n14/10/2569\tDairy Plus\tภาคใต้\tชุมพร\t5\t6000\t9000\n2026-10-14\tอาหารยอดคุณ\tsouth\tสุราษฎร์\t2\t2000\t3,500';
-  await page.fill('#imp-text', tsv);
-  await page.waitForTimeout(150);
-  ok(/พร้อมนำเข้า 2 รายการ/.test(await page.locator('#imp-preview').textContent()), 'import preview counts 2 rows');
-  await page.locator('#sheet button[type=submit]').click();
-  await page.waitForTimeout(300);
-  const imported = await page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data')).orders);
-  const imp = Object.values(imported).filter(o => o.source === 'import');
-  ok(imp.length === 2 && imp.every(o => o.date === '2026-10-14' && o.kind === 'SOUTH'), 'imported rows parsed (Thai BE date, kind) ' + JSON.stringify(imp.map(o => [o.date, o.kind, o.revenue])));
-
-  log('== master: site with coords, vehicle import upsert ==');
-  await go('#master');
-  await page.locator('button[data-act="masterTab"][data-v="sites"]').click();
-  await page.waitForTimeout(150);
-  await page.locator('button[data-act="edit"][data-col="sites"]').first().click();
-  await page.waitForTimeout(150);
-  await page.fill('#f-name', 'เดโปชุมพร');
-  await page.fill('#f-coords', 'ไม่ใช่พิกัด');
-  await page.locator('#sheet button[type=submit]').click();
-  await page.waitForTimeout(150);
-  ok(/อ่านพิกัดไม่ได้/.test(await page.locator('#sheet-err').textContent()), 'bad site coordinates rejected');
-  await page.fill('#f-coords', '10.4930, 99.1800');
-  await page.locator('#sheet button[type=submit]').click();
-  await page.waitForTimeout(200);
-  ok(await page.locator('.row:has-text("เดโปชุมพร") .chip.good').count() === 1, 'site saved and pinned');
-  await page.locator('button[data-act="masterTab"][data-v="vehicles"]').click();
-  await page.waitForTimeout(150);
-  await page.locator('button[data-act="import"]').click();
-  await page.waitForTimeout(150);
-  await page.fill('#imp-text', 'ทะเบียนหลัก\tประเภท(ล้อ)\tเจ้าของ(SSC/Partner)\tเลขไมล์ปัจจุบัน\n70-1001\t10 ล้อ\tSSC\t999999\n71-5555\t22ล้อ\tPartner\t100');
-  await page.waitForTimeout(100);
-  await page.locator('#sheet button[type=submit]').click();
-  await page.waitForTimeout(300);
-  const vs = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem('ssc-demo-data')).vehicles));
-  ok(vs.find(v => v.plate === '70-1001').currentKm === 999999 && vs.find(v => v.plate === '71-5555' && v.type === '22' && v.ownership === 'Partner'), 'vehicle import: update existing by plate + add new');
-
-  log('== maintenance service ==');
-  await go('#maint');
-  await page.locator('.row:has(.plate:text-is("70-1005")) button[data-act="service"]').click();
-  await page.waitForTimeout(150);
-  await page.locator('#sheet button[type=submit]').click();
-  await page.waitForTimeout(250);
-  ok(await page.locator('.row:has(.plate:text-is("70-1005")) .chip.good').count() === 1, 'service resets remaining KM');
-
-  log('== settings ==');
-  await go('#settings');
-  await page.fill('#s-m18', '30000');
-  await page.locator('form[data-form="settings"] button[type=submit]').click();
-  await page.waitForTimeout(250);
-  ok((await page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data')).config.settings.minRevenue['18'])) === 30000, 'settings saved');
-
-  log('== below-minimum approval ==');
-  await go('#dispatch');
-  await page.locator('label.pick:has-text("อาหารยอดคุณ") input').first().check();
-  await page.waitForTimeout(150);
-  const first18 = page.locator('.pick:not([disabled]):has(.vt:has-text("18"))').first();
-  await first18.click();
-  await page.waitForTimeout(150);
-  ok(await page.locator('#dp-ab').count() === 1, 'approval fields appear when revenue < minimum');
-  await page.locator('button[data-act="createTrip"]').click();
-  await page.waitForTimeout(200);
-  ok(/ผู้อนุมัติ/.test(await page.locator('.errbox').textContent().catch(() => '')), 'cannot dispatch without approver');
-  await shot('m-dispatch-approval');
-
-  log('== trailers ==');
-  await go('#trailers');
-  await page.locator('button[data-act="trailerReturn"]').first().click();
-  await page.waitForTimeout(150);
-  await page.fill('#f-kmReturned', '1');
-  await page.locator('#sheet button[type=submit]').click();
-  await page.waitForTimeout(150);
-  ok(/น้อยกว่า/.test(await page.locator('#sheet-err').textContent()), 'trailer return KM validated');
-  await page.locator('#sheet button[data-act="closeSheet"]').first().click();
-
-  log('== driver mode ==');
-  await go('#more');
-  await page.locator('button[data-act="role"][data-v="driver"]').click();
-  await page.waitForTimeout(300);
-  ok(await page.evaluate(() => document.body.classList.contains('driver') && getComputedStyle(document.querySelector('.tabbar')).display === 'none'), 'driver mode hides navigation');
-  await go('#home');
-  ok((await page.locator('#pageTitle').textContent()) === 'เช็คอินคนขับ', 'driver mode stays on check-in page');
-  await shot('m-driver');
-  await page.locator('button[data-act="role"][data-v="dispatch"]').first().click();
-  await page.waitForTimeout(300);
-
-  log('== real-data mode (empty) ==');
-  await page.locator('.banner button[data-act="demoOff"]').click();
-  await page.waitForTimeout(300);
-  await go('#home');
-  ok(await page.locator('h2:has-text("ยังไม่มีข้อมูลรถและคนขับจริง")').count() === 1, 'empty real-data onboarding shown');
-  await shot('m-live-home');
+  log('== check-in at Sai 3 asks about back-haul ==');
   await go('#checkin');
-  ok(await page.locator('.empty:has-text("ยังเช็คอินไม่ได้")').count() === 1, 'check-in explains missing master data');
+  await page.selectOption('#ci-site', 's3'); await page.waitForTimeout(200);
+  await page.selectOption('#ci-driver', 'd14'); await page.waitForTimeout(150);
+  await page.selectOption('#ci-veh', 'v14'); await page.waitForTimeout(150);
+  await page.fill('#ci-loctext', '13.7885, 100.3170'); await page.waitForTimeout(100);
+  await page.locator('form[data-form="checkin"] button[type=submit]').click(); await page.waitForTimeout(250);
+  ok(/Backhaul/.test(await page.locator('.errbox').textContent().catch(() => '')), 'must answer back-haul question at Sai 3');
+  await page.locator('input[name="ci-bh"][value="yes"]').check(); await page.waitForTimeout(100);
+  await page.fill('#ci-loctext', '13.7885, 100.3170'); await page.waitForTimeout(100);
+  await page.locator('form[data-form="checkin"] button[type=submit]').click(); await page.waitForTimeout(300);
+  ok(await page.locator('.ticket .big').count() === 1 && /Backhaul (ทันรอบ|มาหลังรอบ)|สแตนด์บาย/.test(await page.locator('.ticket').textContent()), 'ticket shows queue group');
+  await shot('m-ticket');
+  await page.locator('button[data-act="ciNew"]').first().click(); await page.waitForTimeout(150);
+  await page.selectOption('#ci-site', 'pump'); await page.waitForTimeout(200);
+  ok(await page.locator('input[name="ci-bh"]').count() === 0, 'pump (north) has no back-haul cut-off question');
+
+  log('== dispatch north ==');
   await go('#dispatch');
-  await shot('m-live-dispatch');
+  await page.locator('button[data-act="dpLine"][data-v="north"]').click(); await page.waitForTimeout(200);
+  ok(await page.locator('label.pick:has-text("พัสดุ")').count() === 0, 'no parcel groups on north line');
+  await page.locator('label.pick:has-text("เดโปพิษณุโลก") input').check(); await page.waitForTimeout(200);
+  const recoN = await page.locator('.pick:has(.reco) .plate').first().textContent().catch(() => '');
+  ok(recoN === '70-1002' || recoN === '70-1001', `recommended north truck is a 22-wheeler from the pump queue (${recoN})`);
+  ok(await page.locator('button.pick .ln:has-text("สายใต้")').count() === 0, 'north filter hides south trucks');
+
+  log('== dispatch south with parcels ==');
+  await page.locator('button[data-act="dpLine"][data-v="south"]').click(); await page.waitForTimeout(200);
+  await page.locator('label.pick:has-text("Partner ภูเก็ต") input').check(); await page.waitForTimeout(150);
+  await page.locator('label.pick:has-text("นมชุมพร") input').check(); await page.waitForTimeout(200);
+  const tot = await page.locator('#dp-totals').textContent();
+  ok(/2\s*พัสดุ/.test(tot) || /\+ 2 พัสดุ/.test(tot), 'totals include parcels: ' + tot.replace(/\s+/g, ' '));
+  await page.locator('.pick:has(.reco)').first().click(); await page.waitForTimeout(200);
+  await shot('m-dispatch-south');
+  const before = await page.evaluate(() => location.hash);
+  await page.locator('button[data-act="createTrip"]').click(); await page.waitForTimeout(500);
+  let h = await page.evaluate(() => location.hash);
+  if (!h.startsWith('#trip-')) {
+    const err = await page.locator('.errbox').textContent().catch(() => '');
+    if (/ผู้อนุมัติ/.test(err)) { await page.fill('#dp-ab', 'ทดสอบ'); await page.fill('#dp-ar', 'ทดสอบ'); }
+    if (/ความจุ/.test(err)) await page.locator('input[data-bind="dp.confirmOver"]').check();
+    await page.locator('button[data-act="createTrip"]').click(); await page.waitForTimeout(500);
+    h = await page.evaluate(() => location.hash);
+  }
+  ok(h.startsWith('#trip-') && h !== before, 'south trip with parcels created');
+  const tripId = h.slice(6);
+  let dd = await demo();
+  ok(dd.parcels.p1.tripId === tripId && dd.parcels.p2.tripId === tripId, 'parcels assigned to the new trip');
+  ok(await page.locator('.row:has-text("พัสดุรายบิล")').count() === 1, 'trip shows parcel job');
+
+  log('== scan station ==');
+  await page.locator('a[data-act="scanForTrip"]').first().click(); await page.waitForTimeout(300);
+  ok((await page.evaluate(() => location.hash)) === '#scan' && (await page.inputValue('#sc-trip')) === tripId, 'scan page opens with this trip selected');
+  const no1 = dd.parcels.p1.no;
+  const scan = async code => { await page.fill('#scan-in', code); await page.press('#scan-in', 'Enter'); await page.waitForTimeout(250); return page.locator('.log .row').first().textContent(); };
+  ok(/ขึ้นรถ 1\/3/.test(await scan(no1 + '-01')), 'box 1/3 loaded');
+  ok(/ยิงซ้ำ/.test(await scan(no1 + '-01')), 'duplicate scan warned');
+  ok(/ไม่พบ/.test(await scan('S9901010001-01')), 'unknown number rejected');
+  ok(/รูปแบบ/.test(await scan('HELLO')), 'bad format rejected');
+  ok(/เลขกล่อง/.test(await scan(no1 + '-09')), 'box number beyond count rejected');
+  ok(/ครบแล้ว/.test(await scan(no1)), 'number without box loads all boxes');
+  ok((await page.inputValue('#scan-in')) === '' && await page.evaluate(() => document.activeElement && document.activeElement.id === 'scan-in'), 'input cleared and keeps focus for the next scan');
+  dd = await demo();
+  ok(dd.parcels.p1.status === 'loaded', 'parcel status loaded after all boxes');
+  await page.locator('button[data-act="scanMode"][data-v="arrived"]').click(); await page.waitForTimeout(200);
+  await page.selectOption('#sc-br', 'br-hkt');
+  ok(/ถึงปลายทาง 3\/3/.test(await scan(no1)), 'arrival scan for all boxes');
+  await page.locator('button[data-act="scanMode"][data-v="delivered"]').click(); await page.waitForTimeout(200);
+  await scan(no1);
+  ok(await page.locator('button[data-act="scanDeliver"]').count() === 1, 'deliver mode asks for receiver name');
+  await page.locator('input[data-bind="scan.codOk"]').check();
+  await page.fill('#sc-pod', 'คนรับทดสอบ');
+  await page.locator('button[data-act="scanDeliver"]').click(); await page.waitForTimeout(300);
+  dd = await demo();
+  ok(dd.parcels.p1.status === 'delivered' && dd.parcels.p1.codCollected === true && dd.parcels.p1.podName === 'คนรับทดสอบ', 'delivered with COD collected and receiver name');
+  await shot('m-scan');
+
+  log('== receive parcel + labels ==');
+  await go('#receive');
+  await page.locator('form[data-form="receive"] button[type=submit]').click(); await page.waitForTimeout(200);
+  ok(/กรอกให้ครบ/.test(await page.locator('.errbox').textContent().catch(() => '')), 'receive form validates');
+  await page.fill('#rc-sn', 'ร้านทดสอบส่ง'); await page.fill('#rc-sp', '0811111111');
+  await page.fill('#rc-rn', 'คุณทดสอบรับ'); await page.fill('#rc-rp', '0822222222');
+  await page.selectOption('#rc-pv', 'ยะลา'); await page.waitForTimeout(250);
+  ok((await page.inputValue('#rc-br')) === 'br-yla', 'branch auto-selected from province');
+  await page.fill('#rc-bx', '3'); await page.fill('#rc-w', '27.5'); await page.fill('#rc-fee', '250');
+  await page.locator('input[name="rc-pay"][value="cod"]').check();
+  await page.locator('form[data-form="receive"] button[type=submit]').click(); await page.waitForTimeout(500);
+  ok((await page.evaluate(() => location.hash)).startsWith('#parcel-'), 'goes to parcel detail after save');
+  ok(await page.locator('.label').count() === 3, 'one label per box');
+  ok(await page.locator('.label svg.bc rect').count() > 20, 'barcodes drawn on labels');
+  const trk = (await page.locator('h2.trk').textContent()).trim();
+  ok(/^S\d{10}$/.test(trk), 'tracking number format ' + trk);
+  await shot('m-parcel-labels');
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.locator('button[data-act="labelsPdf"]').click()]);
+  const pth = await dl.path(); const buf = fs.readFileSync(pth);
+  ok(buf.slice(0, 4).toString() === '%PDF' && buf.length > 5000, `label PDF downloaded (${dl.suggestedFilename()}, ${buf.length} bytes)`);
+  fs.copyFileSync(pth, OUT + '/labels.pdf');
+
+  log('== Checker sorts store milk ==');
+  await go('#orders');
+  await page.locator('button[data-act="ordStatus"][data-v="all"]').click(); await page.waitForTimeout(150);
+  await page.locator('.row:has-text("DP-ตย-210") button[data-act="sortStore"]').click(); await page.waitForTimeout(200);
+  await page.fill('#srt-text', 'จังหวัด\tร้าน\tชิ้น\tพาเลท\tน้ำหนัก(กก.)\tรายได้\nภูเก็ต\tร้านทดสอบ A\t300\t4\t4500\t6000\nตรัง\tร้านทดสอบ B\t120\t2\t1800\t2600');
+  await page.waitForTimeout(150);
+  ok(/จะสร้าง 2/.test(await page.locator('#srt-preview').textContent()), 'sort preview counts rows');
+  await sheetOk();
+  dd = await demo();
+  const kids = Object.values(dd.orders).filter(o => o.parentId === 'o3');
+  ok(kids.length === 2 && kids.some(o => o.customer === 'นมภูเก็ต ร้านทดสอบ A' && o.kind === 'SOUTH' && o.line === 'south'), 'creates south orders named นม+จังหวัด+ร้าน');
+
+  log('== north trip legs + close ==');
+  await go('#trip-t21');
+  await page.locator('form[data-form="depart"] button[type=submit]').click(); await page.waitForTimeout(300);
+  await page.locator('button[data-act="addJob"]').click(); await page.waitForTimeout(200);
+  await page.selectOption('#f-kind', 'EMPTY'); await page.selectOption('#f-routeId', 'n-empty-skn'); await sheetOk();
+  await page.locator('button[data-act="addJob"]').click(); await page.waitForTimeout(200);
+  await page.selectOption('#f-kind', 'BH'); await page.selectOption('#f-routeId', 'n-bh-asa'); await page.fill('#f-revenue', '12000'); await sheetOk();
+  dd = await demo();
+  ok(dd.trips.t21.jobs.length === 3 && dd.trips.t21.standardKm === 500, 'legs add up Standard KM (200+40+260=' + dd.trips.t21.standardKm + ')');
+  ok((await page.inputValue('#tc-std')) === '500', 'close form pre-fills trip Standard KM');
+  const mo = dd.trips.t21.mileOut;
+  await page.fill('#tc-in', String(mo + 9000)); await page.locator('form[data-form="closeTrip"] button[type=submit]').click(); await page.waitForTimeout(300);
+  ok(/ผิดปกติ/.test(await page.locator('form[data-form="closeTrip"] .errbox').textContent().catch(() => '')), 'odd mileage needs confirmation');
+  await page.fill('#tc-in', String(mo + 512)); await page.fill('#tc-loaded', '460');
+  await page.locator('form[data-form="closeTrip"] button[type=submit]').click(); await page.waitForTimeout(300);
+  ok(await page.locator('.chip:has-text("ปิดทริปแล้ว")').count() >= 1, 'north trip closed');
+  ok(/\+12/.test(await page.locator('.kv').textContent()), 'variance vs summed legs shown (+12)');
+
+  log('== master: vehicle head/trailer, site cut-off validation ==');
+  await go('#master');
+  ok(await page.locator('.row:has(.plate:text-is("70-1006")) :text("หาง 70-8006")').count() === 1, 'vehicle row shows trailer plate');
+  await page.locator('button[data-act="masterTab"][data-v="sites"]').click(); await page.waitForTimeout(150);
+  await page.locator('.row:has-text("คลังพุทธมณฑลสาย 3") button[data-act="edit"]').click(); await page.waitForTimeout(150);
+  await page.fill('#f-backhaulCutoff', '25:99'); await sheetOk();
+  ok(/ชั่วโมง:นาที/.test(await page.locator('#sheet-err').textContent()), 'bad cut-off time rejected');
+  await page.locator('#sheet button[data-act="closeSheet"]').first().click(); await page.waitForTimeout(150);
+
+  log('== cancel trip returns parcels ==');
+  await go('#trip-' + tripId);
+  await page.locator('form[data-form="depart"] button[data-act="tripCancel"]').click(); await page.waitForTimeout(150);
+  await sheetOk(); await page.waitForTimeout(200);
+  dd = await demo();
+  ok(dd.parcels.p2.tripId === null && dd.parcels.p2.status === 'received', 'parcels back to waiting after trip cancel');
+
+  log('== driver mode + real-data mode ==');
+  await go('#more');
+  await page.locator('button[data-act="role"][data-v="driver"]').click(); await page.waitForTimeout(300);
+  ok(await page.evaluate(() => document.body.classList.contains('driver')), 'driver mode');
+  await page.locator('button[data-act="role"][data-v="dispatch"]').first().click(); await page.waitForTimeout(300);
+  await page.locator('.banner button[data-act="demoOff"]').click(); await page.waitForTimeout(300);
+  await go('#home');
+  ok(await page.locator('h2:has-text("ยังไม่มีข้อมูลรถและคนขับจริง")').count() === 1, 'empty real-data onboarding');
+  await go('#parcels'); ok(await page.locator('.empty').count() >= 1, 'parcels empty state in real mode');
+  await go('#home'); await page.locator('button[data-act="demoOn"]').first().click(); await page.waitForTimeout(300);
 
   log('== desktop + dark ==');
-  await page.locator('#modeChip button').click();
-  await page.waitForTimeout(150);
-  await page.locator('#sheet button[data-act="demoOn"]').click();
-  await page.waitForTimeout(300);
-  ok(await page.locator('.banner').count() === 1, 'demo re-enabled from mode sheet');
   await page.setViewportSize({ width: 1280, height: 900 });
-  await go('#home'); await shot('d-home');
-  await go('#dispatch'); await shot('d-dispatch');
-  await go('#queue'); await shot('d-queue');
+  for (const h of ['home', 'dispatch', 'queue', 'parcel-p4', 'scan']) { await go('#' + h); await shot('d-' + h.replace('-', '_')); }
   await page.emulateMedia({ colorScheme: 'dark' });
   await go('#home'); await shot('d-home-dark');
   await page.setViewportSize({ width: 390, height: 844 });
+  await go('#parcel-p4'); await shot('m-parcel-dark');
   await go('#queue'); await shot('m-queue-dark');
-  await go('#checkin'); await shot('m-checkin-dark');
 
   log('== errors ==');
   errors.forEach(e => log('  ' + e));

@@ -19,7 +19,7 @@ const MOCK = `(() => {
     const st = load();
     const docs = Object.entries(st).filter(([p]) => p.startsWith(col + '/') && p.split('/').length === 2)
       .map(([p, data]) => ({ id: p.split('/')[1], exists: true, data: () => Object.freeze({ ...data }), metadata: { fromCache: false, hasPendingWrites: false } }))
-      .filter(d => filters.every(([f, op, v]) => op === '>=' ? d.data()[f] >= v : true));
+      .filter(d => filters.every(([f, op, v]) => op === '>=' ? d.data()[f] >= v : op === 'in' ? v.includes(d.data()[f]) : true));
     return { docs, size: docs.length, empty: !docs.length, docChanges: () => [], metadata: {} };
   };
   const query = (col, filters) => ({
@@ -30,6 +30,7 @@ const MOCK = `(() => {
   });
   window.__writes = 0;
   const db = Object.freeze({
+    doc(path) { const i = path.lastIndexOf('/'); return this.collection(path.slice(0, i)).doc(path.slice(i + 1)); },
     collection(col) {
       return Object.assign(query(col, []), {
         path: col,
@@ -40,6 +41,7 @@ const MOCK = `(() => {
             get: async () => { const d = load()[p]; return { id, exists: !!d, data: () => d, metadata: {} }; },
             set: async data => { if (window.__denyWrites) throw { code: 'invalid_argument', message: 'denied' }; window.__writes++; const st = load(); st[p] = JSON.parse(JSON.stringify(data)); save(st); notify(); },
             delete: async () => { const st = load(); delete st[p]; save(st); notify(); },
+            acquire: async () => ({ acquired: true, version: 1 }),
           };
         },
       });
@@ -132,6 +134,25 @@ const MOCK = `(() => {
   await A.locator('form[data-form="settings"] button[type=submit]').click(); await A.waitForTimeout(300);
   st = await store();
   ok(st['config/settings'] && st['config/settings'].minRevenue['22'] === 31000, 'config/settings document written');
+
+  log('== parcel received on one screen, scanned at destination on another ==');
+  await go(A, '#receive');
+  await A.fill('#rc-sn', 'ผู้ส่ง ก'); await A.fill('#rc-sp', '0811111111'); await A.fill('#rc-rn', 'ผู้รับ ข'); await A.fill('#rc-rp', '0822222222');
+  await A.selectOption('#rc-pv', 'ตรัง'); await A.waitForTimeout(200);
+  await A.fill('#rc-bx', '2'); await A.fill('#rc-w', '15'); await A.fill('#rc-fee', '180');
+  await A.locator('form[data-form="receive"] button[type=submit]').click(); await A.waitForTimeout(500);
+  st = await store();
+  const pk = Object.entries(st).find(([k]) => k.startsWith('parcels/'));
+  ok(pk && pk[1].no && pk[1].status === 'received' && pk[1].boxes === 2, 'parcel written to shared store: ' + (pk && pk[1].no));
+  ok(st['config/pseq-' + pk[1].day] && st['config/pseq-' + pk[1].day].n === 1, 'tracking number claimed through the per-day counter');
+  const E = await ctx.newPage(); track(E);
+  await E.goto(URL + '#scan'); await ready(E);
+  await E.locator('button[data-act="scanMode"][data-v="arrived"]').click(); await E.waitForTimeout(200);
+  await E.fill('#scan-in', pk[1].no); await E.press('#scan-in', 'Enter'); await E.waitForTimeout(400);
+  ok(/ถึงปลายทาง 2\/2/.test(await E.locator('.log .row').first().textContent()), 'destination scan accepted on second screen');
+  await A.bringToFront(); await A.waitForTimeout(400);
+  ok(/ถึงปลายทาง รอส่ง/.test(await A.locator('#main').textContent()), 'first screen shows arrival without reload');
+  await E.close();
 
   log('== reload keeps data ==');
   await A.reload(); await ready(A); await go(A, '#queue');
