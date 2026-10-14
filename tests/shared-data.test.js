@@ -59,10 +59,12 @@ const MOCK = `(() => {
   await ctx.grantPermissions(['geolocation']).catch(() => {});
   await ctx.setGeolocation({ latitude: 9.1382, longitude: 99.3215, accuracy: 20 }).catch(() => {});
   await ctx.addInitScript(MOCK);
+  await ctx.addInitScript(() => localStorage.setItem('ssc-popup', '"off"'));
   const errors = [];
   const track = p => { p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/fonts|net::|ERR_/.test(m.text())) errors.push(m.text()); }); };
   const A = await ctx.newPage(); track(A);
-  const ready = async p => p.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
+  // loaded = the loading placeholder is gone and the data-source chip is drawn (both happen after the first snapshots)
+  const ready = async p => p.waitForFunction(() => !document.querySelector('#main .loading') && !!document.querySelector('#modeChip').textContent.trim(), null, { timeout: 15000 });
   const go = async (p, h) => { await p.evaluate(x => (location.hash = x), h); await p.waitForTimeout(250); };
   const store = async () => A.evaluate(() => JSON.parse(localStorage.getItem('mockdb') || '{}'));
   const sheetSave = async p => { await p.locator('#sheet button[type=submit]').click(); await p.waitForTimeout(250); };
@@ -80,7 +82,7 @@ const MOCK = `(() => {
   await A.fill('#f-name', 'คลังพุทธมณฑลสาย 3'); await A.fill('#f-coords', '13.7881, 100.3163'); await sheetSave(A);
   await A.locator('button[data-act="masterTab"][data-v="vehicles"]').click(); await A.waitForTimeout(150);
   await A.locator('button[data-act="edit"][data-col="vehicles"]').first().click(); await A.waitForTimeout(150);
-  await A.fill('#f-plate', '70-5001'); await A.selectOption('#f-type', '22'); await A.fill('#f-capWeightKg', '30000'); await A.fill('#f-currentKm', '410000'); await A.fill('#f-lastServiceKm', '400000'); await sheetSave(A);
+  await A.fill('#f-plate', '70-5001'); await A.selectOption('#f-type', '22'); await A.fill('#f-trailerPlate', '70-6001'); await A.fill('#f-capWeightKg', '30000'); await A.fill('#f-currentKm', '410000'); await A.fill('#f-lastServiceKm', '400000'); await sheetSave(A);
   await A.locator('button[data-act="masterTab"][data-v="drivers"]').click(); await A.waitForTimeout(150);
   await A.locator('button[data-act="edit"][data-col="drivers"]').first().click(); await A.waitForTimeout(150);
   await A.fill('#f-name', 'ทดสอบ ขับดี'); await sheetSave(A);
@@ -94,14 +96,19 @@ const MOCK = `(() => {
   const B = await ctx.newPage(); track(B);
   await B.goto(URL + '#checkin'); await ready(B);
   ok(await B.evaluate(() => document.body.classList.contains('driver')), 'opening #checkin link -> driver view');
+  await B.waitForFunction(() => [...document.querySelectorAll('#ci-driver option')].some(o => o.textContent.includes('ทดสอบ ขับดี')), null, { timeout: 10000 }).catch(() => {});
   await B.selectOption('#ci-driver', { label: 'ทดสอบ ขับดี' }); await B.waitForTimeout(150);
   await B.selectOption('#ci-veh', { index: 1 }); await B.waitForTimeout(150);
   await B.fill('#ci-loctext', '13.7890, 100.3170'); await B.waitForTimeout(100);
-  await B.locator('form[data-form="checkin"] button[type=submit]').click(); await B.waitForTimeout(400);
+  await B.screenshot({ path: OUT + '/live-driver-form.png' });
+  for (const k of ['truck', 'plate']) { await B.setInputFiles(`input[data-ciph="${k}"]`, OUT + '/live-driver-form.png'); await B.waitForSelector(`#ci-slot-${k}.ok`, { timeout: 8000 }); }
+  await B.locator('form[data-form="checkin"] button[type=submit]').click(); await B.waitForTimeout(700);
   ok((await B.locator('.ticket .big').textContent().catch(() => '')) === '01', 'driver gets queue 01');
   st = await store();
   const ci = Object.entries(st).find(([k]) => k.startsWith('checkins/'));
   ok(ci && ci[1].inRadius === true && ci[1].status === 'waiting' && ci[1].by === 'u_test', 'check-in stored with radius result, status and viewer id');
+  ok(ci && Object.keys(ci[1].photos || {}).sort().join() === 'plate,truck' && Object.values(ci[1].photos).every(v => /^[0-9a-f]{32}$/.test(v)), 'check-in selfies uploaded to artifact storage, only ids stored');
+  await B.evaluate(() => { window.__uploads.length = 0; });
   await B.screenshot({ path: OUT + '/live-driver-ticket.png', fullPage: true });
 
   log('== dispatcher sees it live ==');
@@ -176,6 +183,7 @@ const MOCK = `(() => {
   await A.fill('#rc-sn', 'ผู้ส่ง ก'); await A.fill('#rc-sp', '0811111111'); await A.fill('#rc-rn', 'ผู้รับ ข'); await A.fill('#rc-rp', '0822222222');
   await A.selectOption('#rc-pv', 'ตรัง'); await A.waitForTimeout(200);
   await A.fill('#rc-bx', '2'); await A.fill('#rc-w', '15'); await A.fill('#rc-fee', '180');
+  await A.fill('#rc-ra', '5 ถ.พระราม 6 อ.เมืองตรัง'); await A.fill('#rc-desc', 'อะไหล่ 2 กล่อง');
   await A.locator('form[data-form="receive"] button[type=submit]').click(); await A.waitForTimeout(500);
   st = await store();
   const pk = Object.entries(st).find(([k]) => k.startsWith('parcels/'));
@@ -184,9 +192,11 @@ const MOCK = `(() => {
   const E = await ctx.newPage(); track(E);
   await E.goto(URL + '#scan'); await ready(E);
   await E.locator('button[data-act="scanMode"][data-v="arrived"]').click(); await E.waitForTimeout(200);
-  await E.fill('#scan-in', pk[1].no); await E.press('#scan-in', 'Enter'); await E.waitForTimeout(400);
+  await E.fill('#scan-in', pk[1].no); await E.press('#scan-in', 'Enter');
+  await E.waitForFunction(() => /ถึงปลายทาง 2\/2/.test((document.querySelector('.log .row') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
   ok(/ถึงปลายทาง 2\/2/.test(await E.locator('.log .row').first().textContent()), 'destination scan accepted on second screen');
-  await A.bringToFront(); await A.waitForTimeout(400);
+  await A.bringToFront();
+  await A.waitForFunction(() => /ถึงปลายทาง รอส่ง/.test(document.querySelector('#main').textContent), null, { timeout: 5000 }).catch(() => {});
   ok(/ถึงปลายทาง รอส่ง/.test(await A.locator('#main').textContent()), 'first screen shows arrival without reload');
   await E.close();
 
@@ -199,6 +209,7 @@ const MOCK = `(() => {
   log('== read-only viewer ==');
   const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 } });
   await ctx2.addInitScript(MOCK);
+  await ctx2.addInitScript(() => localStorage.setItem('ssc-popup', '"off"'));
   await ctx2.addInitScript(s => { window.__canWrite = false; if (!localStorage.getItem('mockdb')) localStorage.setItem('mockdb', s); }, JSON.stringify(await store()));
   const C = await ctx2.newPage(); track(C);
   await C.goto(URL + '#orders'); await ready(C);
@@ -208,6 +219,7 @@ const MOCK = `(() => {
   log('== write rejected at runtime ==');
   const ctx3 = await browser.newContext({ viewport: { width: 390, height: 844 } });
   await ctx3.addInitScript(MOCK);
+  await ctx3.addInitScript(() => localStorage.setItem('ssc-popup', '"off"'));
   await ctx3.addInitScript(s => { window.__denyWrites = true; localStorage.setItem('mockdb', s); localStorage.setItem('ssc-demo-pref', '"live"'); }, JSON.stringify(await store()));
   const D = await ctx3.newPage(); track(D);
   await D.goto(URL + '#master'); await ready(D);

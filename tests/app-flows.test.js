@@ -17,6 +17,8 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   // phone GPS: start at Chumphon (moved per step below)
   await ctx.grantPermissions(['geolocation']).catch(() => {});
   await ctx.setGeolocation({ latitude: 10.4930, longitude: 99.1800, accuracy: 20 }).catch(() => {});
+  // the urgent popup is tested on its own below; keep it from covering the other flows
+  await ctx.addInitScript(() => { if (!sessionStorage.getItem('popup-test')) localStorage.setItem('ssc-popup', '"off"'); });
   if (LIBS) {
     await ctx.route('https://cdnjs.cloudflare.com/**', route => {
       const u = route.request().url();
@@ -33,7 +35,7 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   const go = async h => { await page.evaluate(x => (location.hash = x), h); await page.waitForTimeout(250); };
   const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const shot = async n => page.screenshot({ path: `${OUT}/${n}.png`, fullPage: true });
-  const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v5')));
+  const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v6')));
   const waitDemo = async (pred, ms = 9000) => { const t0 = Date.now(); let d = null; while (Date.now() - t0 < ms) { d = await demo(); try { if (pred(d)) return d; } catch {} await page.waitForTimeout(150); } return d; };
   const podFill = async () => {
     const img = OUT + '/m-home.png';
@@ -93,8 +95,18 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   ok(/Backhaul/.test(await page.locator('.errbox').textContent().catch(() => '')), 'must answer back-haul question at Sai 3');
   await page.locator('input[name="ci-bh"][value="yes"]').check(); await page.waitForTimeout(100);
   await page.fill('#ci-loctext', '13.7885, 100.3170'); await page.waitForTimeout(100);
-  await page.locator('form[data-form="checkin"] button[type=submit]').click(); await page.waitForTimeout(300);
+  await page.locator('form[data-form="checkin"] button[type=submit]').click(); await page.waitForTimeout(250);
+  ok(/ถ่ายรูป เซลฟี่คู่กับรถ และ เซลฟี่คู่กับป้ายทะเบียน/.test(await page.locator('.errbox').textContent().catch(() => '')), 'check-in needs a selfie with the truck and with the plate');
+  for (const k of ['truck', 'plate']) { await page.setInputFiles(`input[data-ciph="${k}"]`, OUT + '/m-home.png'); await page.waitForSelector(`#ci-slot-${k}.ok`, { timeout: 8000 }); }
+  await page.selectOption('#ci-veh', 'v07'); await page.waitForTimeout(150);
+  await page.fill('#ci-trailer', '70-9999'); await page.locator('#ci-odo').focus(); await page.waitForTimeout(500);
+  ok(/ไม่ใช่หางประจำ/.test(await page.locator('form[data-form="checkin"] .note.crit').textContent().catch(() => '')) && await page.locator('#ci-slot-truck.ok img').count() === 1, 'non-regular trailer flagged at check-in; photos survive the re-render');
+  await page.fill('#ci-trailer', ''); await page.selectOption('#ci-veh', 'v14'); await page.waitForTimeout(200);
+  await page.fill('#ci-loctext', '13.7885, 100.3170'); await page.waitForTimeout(100);
+  await page.locator('form[data-form="checkin"] button[type=submit]').click(); await page.waitForTimeout(400);
   ok(await page.locator('.ticket .big').count() === 1 && /Backhaul (ทันรอบ|มาหลังรอบ)|สแตนด์บาย/.test(await page.locator('.ticket').textContent()), 'ticket shows queue group');
+  { const dd0 = await demo(); const c = Object.values(dd0.checkins).find(x => x.vehicleId === 'v14' && x.status === 'waiting'); ok(!!c && /^data:image\/jpeg/.test((c.photos || {}).truck || '') && /^data:image/.test((c.photos || {}).plate || '') && c.spareTrailer === false, 'check-in stores both selfies (regular trailer: no spare flag)'); }
+  ok(/ส่งรูปยืนยันแล้ว 2 รูป/.test(await page.locator('.ticket').textContent()), 'ticket shows the photos were sent');
   await shot('m-ticket');
   await page.locator('button[data-act="ciNew"]').first().click(); await page.waitForTimeout(150);
   await page.selectOption('#ci-site', 'pump'); await page.waitForTimeout(200);
@@ -129,7 +141,7 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   ok(/นมชุมพร/.test(await page.locator('label.pick').first().textContent()), 'dispatch lists earliest due date first');
   await page.locator('label.pick:has-text("Partner ภูเก็ต") input').check(); await page.waitForTimeout(150);
   await page.locator('label.pick:has-text("นมชุมพร") input').check(); await page.waitForTimeout(200);
-  ok(/เลยกำหนดส่ง/.test(await page.locator('.note.crit').first().textContent().catch(() => '')), 'warns when departure date is after the due date');
+  ok(await page.locator('.note.crit:has-text("เลยกำหนดส่ง")').count() === 1, 'warns when departure date is after the due date');
   await page.fill('#dp-date', await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })); await page.waitForTimeout(250);
   ok(/ไม่ถึง 3 วัน|วันเดียวกับกำหนดส่ง/.test(await page.locator('.note.warn').first().textContent().catch(() => '')), 'departure too close to the due date gets a warning (hub needs up to 3 days)');
   const tmrKey = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
@@ -199,6 +211,9 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   await page.selectOption('#rc-pv', 'ยะลา'); await page.waitForTimeout(250);
   ok((await page.inputValue('#rc-br')) === 'br-yla', 'branch auto-selected from province');
   await page.fill('#rc-bx', '3'); await page.fill('#rc-w', '27.5'); await page.fill('#rc-fee', '250');
+  await page.locator('form[data-form="receive"] button[type=submit]').click(); await page.waitForTimeout(200);
+  ok(/ที่อยู่ผู้รับ/.test(await page.locator('.errbox').textContent().catch(() => '')) && /สินค้า/.test(await page.locator('.errbox').textContent().catch(() => '')), 'counter receive needs the receiver address and the product');
+  await page.fill('#rc-sa', '12 ถ.เพชรเกษม บางแค'); await page.fill('#rc-ra', '99 ถ.สิโรรส ต.สะเตง อ.เมืองยะลา'); await page.fill('#rc-desc', 'อะไหล่ 3 กล่อง');
   await page.locator('input[name="rc-pay"][value="cod"]').check();
   await page.locator('form[data-form="receive"] button[type=submit]').click(); await page.waitForTimeout(500);
   ok((await page.evaluate(() => location.hash)).startsWith('#parcel-'), 'goes to parcel detail after save');
@@ -301,14 +316,14 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   ok(await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง")) .row:has-text("สาขาชุมพร") .podthumbs img').count() === 4 && await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง")) .row:has-text("สาขาชุมพร") .chip:has-text("ลงของเสร็จ")').count() === 1, 'trip shows the 4 proof pictures and the unload time');
   await shot('m-trip-track');
   // late: due date already passed and the truck has not reached สุราษฎร์
-  await page.evaluate(() => { const k = 'ssc-demo-data-v5'; const x = JSON.parse(localStorage.getItem(k)); const d = new Date(); d.setDate(d.getDate() - 1); x.trips.t20.arriveDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; x.trips.t20.date = x.trips.t20.arriveDate; localStorage.setItem(k, JSON.stringify(x)); });
+  await page.evaluate(() => { const k = 'ssc-demo-data-v6'; const x = JSON.parse(localStorage.getItem(k)); const d = new Date(); d.setDate(d.getDate() - 1); x.trips.t20.arriveDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; x.trips.t20.date = x.trips.t20.arriveDate; localStorage.setItem(k, JSON.stringify(x)); });
   await page.reload(); await page.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
   await go('#home');
   if (await page.locator('button[data-act="homeAllAtt"]').count()) { await page.locator('button[data-act="homeAllAtt"]').click(); await page.waitForTimeout(200); }
   ok(await page.locator('#main .list .row:has-text("ยังไม่ถึง สาขาสุราษฎร์ธานี") .chip.crit').count() === 1, 'home flags a truck that missed the 07:00 hub time');
   ok(/เข้าสาขาทันก่อน 07:00 น\.\s*\d+%/.test(await page.locator('#main').textContent()), 'monthly on-time hub arrival rate shown');
   await shot('m-home-running');
-  await page.evaluate(() => { const k = 'ssc-demo-data-v5'; const x = JSON.parse(localStorage.getItem(k)); const d = new Date(); x.trips.t20.date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; delete x.trips.t20.arriveDate; localStorage.setItem(k, JSON.stringify(x)); localStorage.setItem('ssc-me', JSON.stringify({ driverId: 'd12', vehicleId: 'v12', siteId: 's3' })); });
+  await page.evaluate(() => { const k = 'ssc-demo-data-v6'; const x = JSON.parse(localStorage.getItem(k)); const d = new Date(); x.trips.t20.date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; delete x.trips.t20.arriveDate; localStorage.setItem(k, JSON.stringify(x)); localStorage.setItem('ssc-me', JSON.stringify({ driverId: 'd12', vehicleId: 'v12', siteId: 's3' })); });
   await page.reload(); await page.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
   await go('#checkin');
   ok(await page.locator('h2:has-text("ทริปของฉัน")').count() === 1 && await page.locator('button[data-act="posGps"]').count() === 1, 'driver page shows my running trip with a send-position button');
@@ -441,7 +456,7 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   await page.fill('#tc-in', String(mo + 512)); await page.fill('#tc-loaded', '460');
   await page.locator('form[data-form="closeTrip"] button[type=submit]').click(); await page.waitForTimeout(300);
   ok(await page.locator('.chip:has-text("ปิดทริปแล้ว")').count() >= 1, 'north trip closed');
-  ok(/\+12/.test(await page.locator('.kv').textContent()), 'variance vs summed legs shown (+12)');
+  ok(/\+12/.test(await page.locator('section:has(h2:has-text("ระยะทาง น้ำมัน ต้นทุน")) .kv').textContent()), 'variance vs summed legs shown (+12)');
 
   log('== master: vehicle head/trailer, site cut-off validation ==');
   await go('#master');

@@ -1,5 +1,5 @@
 <title>SSC Truck Management</title>
-<meta name="description" content="ระบบจัดรถและบริหารรถบรรทุก SSC — แบบร่าง V2">
+<meta name="description" content="ระบบจัดรถและบริหารรถบรรทุก SSC — แบบร่าง V3">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bai+Jamjuree:wght@500;600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap">
@@ -306,7 +306,11 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
 :root{ --st-ink:#0d6e4f; --st-soft:#dbf1e7; --label-bg:#ffffff; --label-fg:#000000; --label-line:#000000; }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --st-ink:#74d3ab; --st-soft:#12302a; } }
 :root[data-theme="dark"]{ --st-ink:#74d3ab; --st-soft:#12302a; }
-.k-st{background:var(--st-soft);color:var(--st-ink)}
+.k-st{background:var(--st-soft);color:var(--st-ink)} .k-ch{background:var(--serious-soft);color:var(--serious-ink)}
+.fleetstats{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (min-width:700px){ .fleetstats{grid-template-columns:repeat(6,minmax(0,1fr))} }
+button.stat{border:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+button.stat[aria-pressed="true"]{background:var(--brand-soft);box-shadow:inset 0 -3px 0 var(--brand)}
 .tabbar{grid-template-columns:repeat(7,minmax(0,1fr))}
 .tabbar a{font-size:10.5px}
 .ln{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:var(--brand-strong);background:var(--brand-soft);padding:2px 8px;border-radius:999px;white-space:nowrap}
@@ -321,6 +325,10 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
 .label .row2{display:flex;justify-content:space-between;gap:8px}
 .label .cod{align-self:flex-start;border:1.5px solid var(--label-line);font-weight:700;padding:1px 6px;border-radius:4px}
 .label svg.bc{width:100%;height:auto;max-height:64px;margin-top:auto;display:block}
+.cashtotal{font:700 30px/1.1 var(--f-display)}
+.cashchange{font-size:16px} .cashchange .change b,.paidbox .change b{font:700 26px/1.1 var(--f-display);color:var(--good-ink)}
+.paidbox{border-color:var(--good);background:var(--good-soft)}
+.label .addr{font-size:10.5px;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .label .code{font:600 12px/1 var(--f-mono);text-align:center;letter-spacing:.06em}
 .scanbox{display:flex;flex-direction:column;gap:10px}
 .scanbox input.scan{font:600 22px/1.2 var(--f-mono);letter-spacing:.05em;min-height:60px;text-transform:uppercase;border-width:2px;border-color:var(--brand)}
@@ -428,6 +436,9 @@ const ICONS = {
   db: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
   trailer: '<rect x="2" y="6" width="15" height="10" rx="1"/><path d="M17 13h5"/><circle cx="6" cy="18" r="1.8"/><circle cx="12" cy="18" r="1.8"/>',
   doc: '<path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>',
+  fuel: '<path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16M3 21h13M7 7h5v4H7z"/><path d="M15 10h2a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V9l-3-3"/>',
+  cash: '<rect x="2.5" y="6" width="19" height="12" rx="1.5"/><circle cx="12" cy="12" r="2.8"/><path d="M6 9.5v5M18 9.5v5"/>',
+  quote: '<path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5"/><path d="M12.5 11.5h-2a1.5 1.5 0 0 0 0 3h1a1.5 1.5 0 0 1 0 3h-2.2M11 10.5v1M11 17.5v1"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
   scan: '<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 8v8M10 8v8M13 8v8M16.5 8v8"/>',
   split: '<path d="M4 6h6l4 6-4 6H4M14 12h6M17 9l3 3-3 3"/>',
@@ -437,21 +448,22 @@ const icon = (n, cls = 'i') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hid
 /* ================= constants ================= */
 const APP_URL = 'https://claude.ai/artifact/T88htFkDJQh7B4LPZUe5Vd';
 const JSPDF_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-const COLS = ['vehicles', 'drivers', 'sites', 'routes', 'orders', 'trips', 'checkins', 'trailers', 'parcels', 'config'];
+const COLS = ['vehicles', 'drivers', 'sites', 'routes', 'orders', 'trips', 'checkins', 'trailers', 'parcels', 'quotes', 'config'];
 const LINES = {
   north: { name: 'สายเหนือ', desc: 'เช็คอินที่ปั๊มนครสวรรค์ · ขาลงนครสวรรค์ → ห้าง/เดโป/สาย 3 · ขากลับรับงานสมุทรสาคร ปทุมธานี วังน้อย และ SC Standard Can (ลำปาง) ส่งเข้าโรงงาน Dairy Plus นครสวรรค์' },
   south: { name: 'สายใต้', desc: 'ฐานคลังพุทธมณฑลสาย 3 · สาย 3 → ชุมพร → สุราษฎร์ → ทุ่งสง → นครศรีธรรมราช · ส่ง Backhaul ภาคใต้แล้วกลับสาย 3' },
   east: { name: 'ภาคตะวันออก (Contract)', desc: 'ยังไม่มีระบบ จะทำให้เหมือนกันทั้งบริษัทในเฟสถัดไป' },
 };
 const KIND = {
-  FH: { label: 'นมเหมาคัน (ห้าง/เดโป)', short: 'เหมา', cls: 'k-fh', line: 'north' },
+  FH: { label: 'นมเหมาคัน (ห้าง/เดโป)', short: 'นมเหมา', cls: 'k-fh', line: 'north' },
   STORE: { label: 'นมร้านค้า → คลังสาย 3', short: 'ร้านค้า', cls: 'k-st', line: 'north' },
   SOUTH: { label: 'กระจายภาคใต้ (จากสาย 3)', short: 'ใต้', cls: 'k-so', line: 'south' },
   BH: { label: 'Backhaul (ขากลับ)', short: 'BH', cls: 'k-bh', line: null },
+  CHARTER: { label: 'งานเหมา (ลูกค้ากำหนดจุดรับ-ส่ง)', short: 'งานเหมา', cls: 'k-ch', line: null },
   EMPTY: { label: 'วิ่งเปล่า', short: 'เปล่า', cls: 'k-ot', line: null },
   OTHER: { label: 'อื่นๆ', short: 'อื่น', cls: 'k-ot', line: null },
 };
-const ORDER_KINDS = ['FH', 'STORE', 'SOUTH', 'BH', 'OTHER'];
+const ORDER_KINDS = ['FH', 'STORE', 'SOUTH', 'BH', 'CHARTER', 'OTHER'];
 const SOUTH_CATS = ['นมร้านค้า', 'ลูกค้าสัญญา', 'อื่นๆ'];
 const VTYPES = ['10', '18', '22'];
 const SITE_KIND = { base: 'คลัง / ฐาน', checkin: 'จุดเช็คอิน', origin: 'โรงงาน / จุดรับสินค้า', branch: 'สาขา / จุดกระจายปลายทาง', destination: 'ลูกค้า / ปลายทาง', service: 'อู่ / ร้านซ่อม' };
@@ -466,6 +478,7 @@ const DEFAULT_SETTINGS = {
   legalGrossKg: { '10': 25000, '18': 45000, '22': 50000 },
   bufferHours: 2, hubDays: 3, timeMatchAt: 'Dairy Plus นครสวรรค์',
   southArriveBy: '07:00', posStaleHours: 4,
+  notifyBy: '14:00', fuelPrice: 32, quoteMarginPct: 20, roadFactor: 1.3,
 };
 const ORDER_STATUS = { open: ['รอจัดรถ', 'warn'], planned: ['จัดรถแล้ว', 'info'], done: ['ส่งแล้ว', 'good'], cancel: ['ยกเลิก', ''] };
 const TRIP_STATUS = { planned: ['วางแผน / รอออกรถ', 'info'], running: ['กำลังวิ่ง', 'warn'], closed: ['ปิดทริปแล้ว', 'good'], cancel: ['ยกเลิก', ''] };
@@ -485,7 +498,7 @@ function settings() {
   return { ...DEFAULT_SETTINGS, ...s, fuelStd: { ...DEFAULT_SETTINGS.fuelStd, ...(s.fuelStd || {}) }, minRevenue: { ...DEFAULT_SETTINGS.minRevenue, ...(s.minRevenue || {}) }, maxPayloadKg: { ...DEFAULT_SETTINGS.maxPayloadKg, ...(s.maxPayloadKg || {}) }, legalGrossKg: { ...DEFAULT_SETTINGS.legalGrossKg, ...(s.legalGrossKg || {}) } };
 }
 const clean = obj => { const o = JSON.parse(JSON.stringify(obj)); delete o.id; return o; };
-const DEMO_KEY = 'ssc-demo-data-v5';
+const DEMO_KEY = 'ssc-demo-data-v6';
 function saveLocal() { ls.set('ssc-local-data', S.live); }
 function saveDemo() { ls.set(DEMO_KEY, S.demoData); }
 async function put(col, id, obj) {
@@ -540,7 +553,7 @@ function subscribeAll() {
   });
   setTimeout(markLoaded, 8000);
 }
-function markLoaded() { if (S.loaded) return; S.loaded = true; decideDemo(); renderChrome(); render({ force: true }); }
+function markLoaded() { if (S.loaded) return; S.loaded = true; decideDemo(); renderChrome(); render({ force: true }); setTimeout(() => { try { checkUrgent(); } catch (e) { console.error(e); } }, 1800); }
 function decideDemo() {
   const pref = ls.get('ssc-demo-pref', null);
   const hasReal = Object.keys(S.live.vehicles).length > 0;
@@ -734,8 +747,15 @@ function evaluate(v, load, route) {
     const ok = load.reqTypes.has(v.type);
     checks.push({ key: 'type', state: ok ? 'good' : 'warn', title: 'ประเภทรถตาม Checker', text: ok ? `ตรงกับที่ Checker กำหนด (${v.type} ล้อ)` : `Checker กำหนด ${[...load.reqTypes].join('/')} ล้อ แต่รถคันนี้ ${v.type} ล้อ` });
   }
+  const ph = load.count ? loadHubs(load).filter(isPartnerHub) : [];
+  if (ph.length) {
+    const names = ph.map(b => b.name).join(', ');
+    if (v.ownership !== 'Partner') checks.push({ key: 'partner', state: 'crit', title: 'จังหวัด Partner', text: `ปลายทาง ${names} ต้องใช้รถ Partner ไม่ใช่รถบริษัท` });
+    else if (!ph.every(b => partnerFor(v, b))) checks.push({ key: 'partner', state: 'warn', title: 'จังหวัด Partner', text: `รถ Partner ${v.partner || ''} ไม่ตรงกับปลายทาง ${names}` });
+    else checks.push({ key: 'partner', state: 'good', title: 'จังหวัด Partner', text: `ใช้รถ Partner ${v.partner} ตรงกับปลายทาง` });
+  }
   const overall = checks.some(c => c.state === 'crit') ? 'crit' : checks.some(c => c.state === 'warn') ? 'warn' : 'good';
-  return { checks, util, overall, maint: m, below: checks.some(c => c.below), over: over.length > 0, overWeight: overW || grossOver };
+  return { checks, util, overall, maint: m, below: checks.some(c => c.below), over: over.length > 0, overWeight: overW || grossOver, partnerBad: checks.some(c => c.key === 'partner' && c.state === 'crit'), partnerHubs: ph };
 }
 function candidates(load, route, line, loadDT) {
   const busy = busyVehicles();
@@ -752,11 +772,91 @@ function candidates(load, route, line, loadDT) {
     const group = unavailable ? 3 : busy[v.id] ? 2 : w ? (w.ready === false ? 1 : 0) : 2;
     return { v, w, ev, busy: busy[v.id] || null, timing, fits, unavailable, group, away };
   });
-  list.sort((a, b) => a.group - b.group || (a.away - b.away) || (a.w && b.w ? queueCmp(a.w, b.w) : 0) || thSort('plate')(a.v, b.v));
+  // loads for Partner provinces: the matching Partner truck comes first
+  const pm = x => { const c = x.ev.checks.find(k => k.key === 'partner'); return !c ? 1 : c.state === 'good' ? 0 : c.state === 'warn' ? 1 : 2; };
+  list.sort((a, b) => a.group - b.group || pm(a) - pm(b) || (a.away - b.away) || (a.w && b.w ? queueCmp(a.w, b.w) : 0) || thSort('plate')(a.v, b.v));
   const ok0 = list.filter(x => x.group === 0 && !x.away && x.ev.overall !== 'crit');
   const reco = ok0.find(x => !x.ev.checks.some(c => c.key === 'type' && c.state !== 'good')) || ok0[0];
   return { list, reco: reco ? reco.v.id : null };
 }
+
+/* ================= V3 rules: fuel per route, south corridor, Partner hubs, contract cargo, deadlines ================= */
+// fuel given for a leg = Standard KM ÷ standard km/litre of the truck type (settings.fuelStd)
+const fuelGive = (km, type) => { const k = num(km), r = num(settings().fuelStd[type]); return k && r ? Math.round(k / r) : null; };
+const fuelText = km => num(km) ? VTYPES.map(t => `${t} ล้อ ${fmt(fuelGive(km, t))} ล.`).join(' · ') : '';
+const tripFuelPlan = t => { const v = vehicleOf(t.vehicleId); return fuelGive(t.standardKm, v && v.type); };
+const feedDone = t => !!(t.feed && t.feed.at);
+// south hubs in driving order from คลังสาย 3: ชุมพร → สุราษฎร์ → ทุ่งสง → นครศรีฯ, then the Partner provinces
+const CORRIDOR = [['ชุมพร', 0], ['ระนอง', 0.5], ['สุราษฎร์', 1], ['กระบี่', 1.5], ['ทุ่งสง', 2], ['นครศรี', 3], ['ภูเก็ต', 4], ['พังงา', 4.2], ['ตรัง', 5], ['พัทลุง', 5.5], ['สงขลา', 6], ['สตูล', 6.5], ['ยะลา', 7], ['ปัตตานี', 7.2], ['นราธิวาส', 7.4]];
+const MAIN_CHAIN = 3.5; // hubs up to นครศรีฯ are on one road and can share a truck
+const corridorIdx = name => { const n = String(name || ''); const hit = CORRIDOR.find(([k]) => n.includes(k)); return hit ? hit[1] : 99; };
+const byCorridor = (a, b) => corridorIdx(a) - corridorIdx(b);
+const splitDest = x => String(x || '').split(/\s*→\s*|\s+\/\s+/).map(y => y.trim()).filter(Boolean);
+function loadHubs(load) {
+  const hubs = {};
+  load.orders.forEach(o => { if (orderLine(o) !== 'south' || o.kind === 'BH' || o.kind === 'CHARTER') return; splitDest(o.destination).forEach(nm => { const b = branchFor(nm); if (b) hubs[b.id] = b; }); });
+  (load.groups || []).forEach(g => { const b = g.key.startsWith('b:') ? S.d.sites[g.key.slice(2)] : branchFor(g.key.slice(2)); if (b) hubs[b.id] = b; });
+  return Object.values(hubs).sort((a, b) => byCorridor(a.name, b.name));
+}
+const isPartnerHub = b => !!b && b.operator === 'Partner';
+function partnerFor(v, hub) {
+  if (!v || v.ownership !== 'Partner' || !v.partner) return false;
+  const p = normName(v.partner);
+  return [hub.name, ...String(hub.provinces || '').split(',')].map(normName).filter(x => x.length >= 3).some(x => x.includes(p) || p.includes(x));
+}
+// contract cargo (store milk sorted at Sai 3, contract customers, snacks) still at Sai 3: load the day before it is due
+const tripLeft = id => { const t = id && S.d.trips[id]; return !!t && (t.status === 'running' || t.status === 'closed'); };
+function atSai3() {
+  const today = dayKey(), out = [];
+  Object.values(S.d.orders).forEach(o => {
+    if (o.kind !== 'SOUTH' || !o.dueDate || o.status === 'done' || o.status === 'cancel' || tripLeft(o.tripId)) return;
+    if (!(o.category === 'นมร้านค้า' || o.category === 'ลูกค้าสัญญา' || o.parentId)) return;
+    out.push({ id: o.id, type: 'order', name: `${o.customer || ''} → ${o.destination || ''}`, due: o.dueDate, tripId: o.tripId || null, href: '#orders' });
+  });
+  Object.values(S.d.parcels).forEach(p => {
+    if (!(p.contract || p.category === 'ขนม') || !p.dueDate || p.status !== 'received' || tripLeft(p.tripId)) return;
+    out.push({ id: p.id, type: 'parcel', name: `${p.no} ${p.receiverName || ''} → ${p.province || ''}`, due: p.dueDate, tripId: p.tripId || null, href: '#parcel-' + p.id });
+  });
+  return out.map(r => { const loadBy = addDays(r.due, -1); return { ...r, loadBy, st: loadBy <= today ? 'crit' : loadBy === addDays(today, 1) ? 'serious' : null }; })
+    .filter(r => r.st).sort((a, b) => a.due.localeCompare(b.due));
+}
+// plates must reach the factory by settings.notifyBy (14:00) on the day before loading
+const notifyByTime = () => (/^\d{2}:\d{2}$/.test(settings().notifyBy || '') ? settings().notifyBy : '14:00');
+const notifyDeadline = t => new Date(`${addDays(t.date, -1)}T${notifyByTime()}:00`);
+function notifyState(t) {
+  if (t.status !== 'planned' || t.notifiedAt || !needsFactory(t)) return null;
+  const dl = notifyDeadline(t), left = dl - Date.now();
+  if (left < 0) return { st: 'crit', text: `เลยเวลาแจ้งทะเบียนโรงงาน (${notifyByTime()} น. ${thDate(dayKey(dl))})`, dl };
+  if (left < 3 * 3600000) return { st: 'serious', text: `ต้องแจ้งทะเบียนโรงงานก่อน ${notifyByTime()} น. (เหลือ ${durText(left / 60000)})`, dl };
+  if (dayKey(dl) === dayKey()) return { st: 'warn', text: `ต้องแจ้งทะเบียนโรงงานก่อน ${notifyByTime()} น. วันนี้`, dl };
+  return { st: '', text: `แจ้งทะเบียนโรงงานภายใน ${dtText(dl)}`, dl };
+}
+// trailers: 18/22-wheel heads have a regular trailer; any other trailer is a spare (risk for maintenance and tyres)
+const isSpare = (v, plateNo) => !!plateNo && !!v && v.type !== '10' && !!v.trailerPlate && normPlate(plateNo) !== normPlate(v.trailerPlate);
+const openSpare = v => Object.values(S.d.trailers).find(x => x.vehicleId === v.id && x.status === 'out') || null;
+function provinceOf(name) {
+  const st = siteFor(name) || branchFor(name);
+  if (st && hasPin(st)) { const p = thPlace(+st.lat, +st.lng); if (p && p.province) return p.province; }
+  const n = String(name || ''); const all = geo().p || [];
+  return all.find(p => n.includes(p)) || all.find(p => p.length > 5 && n.includes(p.slice(0, 5))) || '';
+}
+const newerPos = (a, b) => (!a ? b : !b ? a : (a.at || '') >= (b.at || '') ? a : b);
+function fleetState(v) {
+  const mine = Object.values(S.d.trips).filter(t => t.vehicleId === v.id);
+  const run = mine.filter(t => t.status === 'running').sort((a, b) => String(b.departedAt || '').localeCompare(String(a.departedAt || '')))[0] || null;
+  const plan = mine.filter(t => t.status === 'planned').sort((a, b) => String(a.date).localeCompare(String(b.date)))[0] || null;
+  const last = run ? null : mine.filter(t => t.status === 'closed').sort((a, b) => String(b.closedAt || '').localeCompare(String(a.closedAt || '')))[0] || null;
+  const w = Object.values(S.d.checkins).filter(c => c.status === 'waiting' && c.vehicleId === v.id).sort(queueCmp)[0] || null;
+  const off = v.status === 'repair' || v.status === 'off';
+  const st = run ? 'run' : off ? 'repair' : plan ? 'plan' : w ? 'queue' : 'idle';
+  const pos = newerPos(run && run.pos, v.gps || null);
+  const m = maint(v);
+  const spareTrip = [run, plan].find(t => t && t.spareTrailer) || null;
+  const spare = spareTrip ? spareTrip.spareTrailer.plate : (w && w.spareTrailer ? w.trailerPlate : (openSpare(v) || {}).trailerPlate || '');
+  return { v, st, run, plan, last, w, off, pos, m, spare };
+}
+const FLEET_ST = { run: ['กำลังวิ่ง', 'info', 'truck'], plan: ['รอออกรถ', '', 'clock'], queue: ['รอคิว', '', 'queue'], idle: ['ว่าง', 'good', 'check'], repair: ['ซ่อม / งดใช้', 'serious', 'wrench'] };
+const needsMaint = x => ['crit', 'serious', 'warn'].includes(x.m.state);
 
 /* ================= geo ================= */
 function haversine(a, b) {
@@ -838,12 +938,13 @@ const seg = (act, cur, items) => `<div class="seg" role="group">${items.map(([k,
 
 /* ================= UI state ================= */
 const me = ls.get('ssc-me', {});
-const blankRcv = () => ({ category: 'เบ็ดเตล็ด', dueDate: addDays(dayKey(), 3), senderName: '', senderPhone: '', receiverName: '', receiverPhone: '', receiverAddress: '', province: '', branchId: '', deliveryMode: 'branch', boxes: '1', weightKg: '', description: '', fee: '', payer: 'origin', note: '', err: '' });
-const blankDp = (date) => ({ line: 'all', sel: {}, psel: {}, routeId: '', vehicleId: '', driverId: '', trailerPlate: '', loadTime: '', arriveDate: '', date: date || addDays(dayKey(), 1), kind: 'all', dateFilter: '', approveBy: '', approveReason: '', confirmOver: false, err: '' });
+const blankRcv = () => ({ category: 'เบ็ดเตล็ด', dueDate: addDays(dayKey(), 3), senderName: '', senderPhone: '', senderAddress: '', receiverName: '', receiverPhone: '', receiverAddress: '', province: '', branchId: '', deliveryMode: 'branch', boxes: '1', weightKg: '', description: '', fee: '', payer: 'origin', note: '', err: '' });
+const blankDp = (date) => ({ line: 'all', sel: {}, psel: {}, routeId: '', vehicleId: '', driverId: '', trailerPlate: '', spareReason: '', loadTime: '', arriveDate: '', fhArrive: '', partnerOk: false, partnerReason: '', date: date || addDays(dayKey(), 1), kind: 'all', dateFilter: '', approveBy: '', approveReason: '', confirmOver: false, err: '' });
 const ui = {
-  ci: { driverId: me.driverId || '', driverName: '', vehicleId: me.vehicleId || '', trailerPlate: '', siteId: me.siteId || '', withBackhaul: '', odometer: '', ready: 'yes', issue: '', note: '', loc: null, locText: '', locMsg: '', err: '', showForm: false },
+  ci: { driverId: me.driverId || '', driverName: '', vehicleId: me.vehicleId || '', trailerPlate: '', siteId: me.siteId || '', withBackhaul: '', odometer: '', ready: 'yes', issue: '', note: '', loc: null, locText: '', locMsg: '', err: '', showForm: false, photos: {} },
   queueSite: ls.get('ssc-queue-site', 'all'),
   home: { line: 'all', allAtt: false },
+  fleet: { f: 'all', line: 'all', q: '' },
   orders: { status: 'open', kind: 'all', line: 'all', date: '', q: '' },
   dp: blankDp(),
   trips: { tab: 'active' },
@@ -852,6 +953,8 @@ const ui = {
   parcels: { status: 'received', q: '' },
   rcv: blankRcv(),
   scan: { mode: 'loaded', tripId: '', branchId: '', code: '', log: [], pending: null, podName: '', codOk: false },
+  cash: { code: '', cart: [], cash: '', method: 'cash', last: null, err: '' },
+  quotes: { status: 'open' },
 };
 function setPath(path, value) { const ks = path.split('.'); let o = ui; ks.slice(0, -1).forEach(k => (o = o[k])); o[ks[ks.length - 1]] = value; }
 
@@ -866,8 +969,11 @@ const NAV = [
   { id: 'more', label: 'เพิ่มเติม', icon: 'grid' },
 ];
 const MORE = [
+  { id: 'fleet', label: 'รถทุกคัน', icon: 'truck', desc: 'แต่ละคันทำอะไรอยู่ อยู่จังหวัดไหน Maintenance' },
   { id: 'checkin', label: 'เช็คอินคนขับ', icon: 'pin', desc: 'หน้าที่คนขับใช้เช็คอินเข้าคิว' },
-  { id: 'receive', label: 'รับพัสดุ', icon: 'parcel', desc: 'รับบิลเบ็ดเตล็ด/ขนม ออกลาเบล' },
+  { id: 'quotes', label: 'งานเหมา / เสนอราคา', icon: 'quote', desc: 'ลูกค้ากำหนดจุดรับ-ส่ง คำนวณราคา' },
+  { id: 'receive', label: 'รับพัสดุหน้าร้าน', icon: 'parcel', desc: 'Checker รับบิล ออกลาเบล' },
+  { id: 'cashier', label: 'แคชเชียร์', icon: 'cash', desc: 'ยิงลาเบลคิดเงิน ทอนเงิน' },
   { id: 'scan', label: 'ยิงบาร์โค้ด', icon: 'scan', desc: 'ขึ้นรถ · รับปลายทาง · ส่งลูกค้า' },
   { id: 'maint', label: 'Maintenance', icon: 'wrench', desc: 'รอบเข้าศูนย์ทุก 20,000 กม.' },
   { id: 'master', label: 'ข้อมูลหลัก', icon: 'db', desc: 'รถ คนขับ จุดเช็คอิน สาขา เส้นทาง' },
@@ -876,8 +982,8 @@ const MORE = [
   { id: 'spec', label: 'ร่างระบบเช็คอิน', icon: 'doc', desc: 'ต้องเก็บอะไรบ้าง กฎคิว' },
   { id: 'pending', label: 'รอข้อมูล / คำถาม', icon: 'list', desc: 'ไฟล์ที่รอ และเรื่องที่ยืนยันแล้ว' },
 ];
-const TITLES = { home: 'ภาพรวม', queue: 'คิวรถ', checkin: 'เช็คอินคนขับ', orders: 'ออเดอร์', parcels: 'พัสดุรายบิล', parcel: 'รายละเอียดพัสดุ', receive: 'รับพัสดุ', scan: 'ยิงบาร์โค้ด', dispatch: 'จัดรถ / Matching', trips: 'ทริป', trip: 'รายละเอียดทริป', maint: 'Maintenance', master: 'ข้อมูลหลัก', trailers: 'หางสำรอง', settings: 'ค่าตั้งค่า', spec: 'ร่างระบบเช็คอิน', pending: 'รอข้อมูล / คำถาม', more: 'เพิ่มเติม' };
-const TAB_OF = { trip: 'trips', parcel: 'parcels', receive: 'parcels', scan: 'parcels' };
+const TITLES = { home: 'ภาพรวม', fleet: 'รถทุกคัน', quotes: 'งานเหมา / ใบเสนอราคา', quote: 'ใบเสนอราคา', cashier: 'แคชเชียร์หน้าร้าน', queue: 'คิวรถ', checkin: 'เช็คอินคนขับ', orders: 'ออเดอร์', parcels: 'พัสดุรายบิล', parcel: 'รายละเอียดพัสดุ', receive: 'รับพัสดุ', scan: 'ยิงบาร์โค้ด', dispatch: 'จัดรถ / Matching', trips: 'ทริป', trip: 'รายละเอียดทริป', maint: 'Maintenance', master: 'ข้อมูลหลัก', trailers: 'หางสำรอง', settings: 'ค่าตั้งค่า', spec: 'ร่างระบบเช็คอิน', pending: 'รอข้อมูล / คำถาม', more: 'เพิ่มเติม' };
+const TAB_OF = { trip: 'trips', parcel: 'parcels', receive: 'parcels', scan: 'parcels', cashier: 'parcels', quote: 'more' };
 let role = ls.get('ssc-role', null);
 if (!role) role = (location.hash === '#checkin') ? 'driver' : 'dispatch';
 function currentRoute() {
@@ -893,7 +999,7 @@ function renderChrome() {
   const activeTab = MORE.some(m => m.id === page) && !TAB_OF[page] ? 'more' : (TAB_OF[page] || page);
   $('#tabbar').innerHTML = NAV.map(n => `<a href="#${n.id}" ${activeTab === n.id ? 'aria-current="page"' : ''}>${icon(n.icon)}<span>${n.label}</span></a>`).join('');
   const railLink = n => `<a href="#${n.id}" ${(page === n.id || (!MORE.some(m => m.id === page) && TAB_OF[page] === n.id)) ? 'aria-current="page"' : ''}>${icon(n.icon)}${n.label}</a>`;
-  $('#rail').innerHTML = `<div class="brand"><img alt="SSC" src="${$('.top .logo').src}"><div><b>ภูเก็ตศรีสุชาติขนส่ง</b><small>ระบบจัดรถ · แบบร่าง V2</small></div></div>`
+  $('#rail').innerHTML = `<div class="brand"><img alt="SSC" src="${$('.top .logo').src}"><div><b>ภูเก็ตศรีสุชาติขนส่ง</b><small>ระบบจัดรถ · แบบร่าง V3</small></div></div>`
     + NAV.filter(n => n.id !== 'more').map(railLink).join('')
     + `<div class="sep"></div><div class="grp">เพิ่มเติม</div>` + MORE.map(railLink).join('');
   const chipEl = $('#modeChip');
@@ -969,7 +1075,11 @@ PAGES.home = () => {
   trips.filter(t => t.status === 'planned' || t.status === 'running').forEach(t => { const late = tripStops(t).filter(st => !st.at && st.due && new Date(st.due) < new Date()); if (late.length) att.push({ st: 'crit', html: `${plate(vehicleOf(t.vehicleId))} <span>ทริป ${esc(t.no)} ยังไม่ถึง ${esc(late.map(x => x.name).join(', '))} · ต้องถึงก่อน ${dtText(late[0].due)}</span>`, href: '#trip-' + t.id }); });
   running.forEach(t => tripStops(t).forEach(st => { if (st.at && !st.doneAt && !st.pickup && Date.now() - new Date(st.at) > 3 * 3600000) att.push({ st: 'warn', html: `${plate(vehicleOf(t.vehicleId))} <span>ถึง ${esc(st.name)} ตั้งแต่ ${hhmm(st.at)} ยังไม่กดลงของเสร็จ (ส่งงาน)</span>`, href: '#trip-' + t.id }); }));
   running.forEach(t => { const last = t.pos ? t.pos.at : t.departedAt; if (last && Date.now() - new Date(last) > s.posStaleHours * 3600000) att.push({ st: 'warn', html: `${plate(vehicleOf(t.vehicleId))} <span>ทริป ${esc(t.no)} ${t.pos ? `ไม่ได้อัปเดตตำแหน่งตั้งแต่ ${dtText(t.pos.at)}` : 'ออกรถแล้วยังไม่มีตำแหน่ง'}</span>`, href: '#trip-' + t.id }); });
-  planned.forEach(t => { if (!t.notifiedAt && needsFactory(t) && t.date <= addDays(today, 1)) att.push({ st: t.date <= today ? 'serious' : 'warn', html: `${plate(vehicleOf(t.vehicleId))} <span>ทริป ${esc(t.no)} ยังไม่ได้แจ้งทะเบียนโรงงาน (โหลด ${thDate(t.date)}${t.loadAt ? ' ' + hhmm(t.loadAt) : ''})</span>`, href: '#trip-' + t.id }); });
+  planned.forEach(t => { const ns = notifyState(t); if (ns && ns.st) att.push({ st: ns.st, html: `${plate(vehicleOf(t.vehicleId))} <span>ทริป ${esc(t.no)} ยังไม่ได้แจ้งทะเบียนโรงงาน · ${esc(ns.text)} (โหลด ${thDate(t.date)}${t.loadAt ? ' ' + hhmm(t.loadAt) : ''})</span>`, href: '#trip-' + t.id }); });
+  if (L !== 'north') { const c3 = atSai3(); [['crit', 'ต้องโหลดวันนี้'], ['serious', 'แจ้งล่วงหน้า 1 วัน: ต้องโหลดพรุ่งนี้']].forEach(([st, lab]) => { const xs = c3.filter(x => x.st === st); if (xs.length) att.push({ st, html: `<span>งานสัญญายังอยู่คลังสาย 3 ${lab} ${xs.length} รายการ${xs.some(x => x.tripId) ? ` (จัดรถแล้ว ${xs.filter(x => x.tripId).length})` : ''}: ${esc(xs.slice(0, 3).map(x => x.name).join(', '))}${xs.length > 3 ? ' …' : ''}</span>`, href: '#dispatch' }); }); }
+  { const nf = trips.filter(t => (t.status === 'running' || (t.status === 'planned' && t.date <= addDays(today, 1))) && !feedDone(t)); if (nf.length) att.push({ st: nf.some(t => t.status === 'running') ? 'serious' : 'warn', html: `<span>ยังไม่ได้คีย์น้ำมันเข้า Feed Card ${nf.length} ทริป: ${esc(nf.slice(0, 4).map(t => `${t.no} (${(vehicleOf(t.vehicleId) || {}).plate || '-'})`).join(', '))}${nf.length > 4 ? ' …' : ''}</span>`, href: '#trips' }); }
+  trips.filter(t => (t.status === 'planned' || t.status === 'running') && t.spareTrailer).forEach(t => att.push({ st: 'serious', html: `${plate(vehicleOf(t.vehicleId))} <span>ใช้หางสำรอง ${esc(t.spareTrailer.plate)} แทนหางประจำ ${esc(t.spareTrailer.regular || '-')} · ทริป ${esc(t.no)}${t.spareTrailer.reason ? ' · ' + esc(t.spareTrailer.reason) : ''} (ระวังเรื่องซ่อมบำรุงและยาง)</span>`, href: '#trip-' + t.id }));
+  waiting.filter(c => c.spareTrailer).forEach(c => att.push({ st: 'serious', html: `${plate(vehicleOf(c.vehicleId))} <span>เช็คอินมาพร้อมหางสำรอง ${esc(c.trailerPlate)} (หางประจำ ${esc((vehicleOf(c.vehicleId) || {}).trailerPlate || '-')})</span>`, href: '#queue' }));
   if (L !== 'north') { const pd = parcels.filter(p => p.dueDate && p.dueDate <= addDays(today, 1) && p.status !== 'delivered' && p.status !== 'cancel'); if (pd.length) { const late = pd.filter(p => p.dueDate < today).length; att.push({ st: late || pd.some(p => p.dueDate === today) ? 'crit' : 'warn', html: `<span>พัสดุ ${pd.length} บิลต้องถึงลูกค้าภายในพรุ่งนี้ยังไม่ส่งสำเร็จ${late ? ` (เลยกำหนดแล้ว ${late} บิล)` : ''}</span>`, href: '#parcels' }); } }
   running.forEach(t => { if (t.departedAt && Date.now() - new Date(t.departedAt) > 4 * 86400000) att.push({ st: 'warn', html: `${plate(vehicleOf(t.vehicleId))} <span>ทริป ${esc(t.no)} วิ่งเกิน 4 วัน ยังไม่ปิด</span>`, href: '#trip-' + t.id }); });
   if (L !== 'north') {
@@ -1024,6 +1134,11 @@ PAGES.home = () => {
       <a href="#trips"><span class="n">5</span><span class="t"><small>Close Trip</small><span>ปิดทริปเดือนนี้</span></span><span class="c">${closedM.length}</span></a>
     </div>
   </section>
+
+  ${vs.length ? (() => { const fr = Object.values(d.vehicles).filter(v => L === 'all' || v.line === L).map(fleetState); const fc = fleetCount(fr); return `<section class="sec">
+    <div class="sec-h"><h2>รถทุกคัน <span class="small muted">${fr.length} คัน</span></h2><a class="btn sm" href="#fleet">ดูรถทุกคัน</a></div>
+    <a class="card pad rowflex" href="#fleet" style="text-decoration:none;color:inherit">${chip('info', `กำลังวิ่ง ${fc.run}`, 'truck')} ${chip('', `รอออกรถ ${fc.plan}`, 'clock')} ${chip('', `รอคิว ${fc.queue}`, 'queue')} ${chip('good', `ว่าง ${fc.idle}`)} ${fc.repair ? chip('serious', `ซ่อม/งดใช้ ${fc.repair}`, 'wrench') : ''} ${fc.due ? chip('crit', `ถึงรอบเข้าศูนย์ ${fc.due}`, 'wrench') : ''} ${fc.spare ? chip('serious', `ใช้หางสำรอง ${fc.spare}`, 'trailer') : ''}</a>
+  </section>`; })() : ''}
 
   <section class="sec">
     <div class="sec-h"><h2>ต้องดูแล</h2><span class="sub">${att.length ? att.length + ' รายการ' : ''}</span></div>
@@ -1099,6 +1214,77 @@ PAGES.home = () => {
   </div>`;
 };
 
+/* ---------- fleet: every truck, what it is doing now, where, maintenance ---------- */
+function fleetRows() {
+  const order = { run: 0, plan: 1, queue: 2, idle: 3, repair: 4 };
+  return Object.values(S.d.vehicles).map(fleetState).sort((a, b) => order[a.st] - order[b.st] || thSort('plate')(a.v, b.v));
+}
+function fleetActivity(x) {
+  const { st, run, plan, w, last } = x;
+  if (run) {
+    const stops = tripStops(run); const next = stops.find(y => !stopDone(y)); const ns = next ? stopState(next) : null;
+    const pv = next ? provinceOf(next.name) : '';
+    return `<div class="l1 small"><b>ทริป ${esc(run.no)}</b> · <b>${esc(tripOrigin(run) || 'ต้นทาง')}</b> <i class="muted">→</i> ${stopsLine(stops)}</div>
+      ${next ? `<div class="l1">${chip(ns[0] === 'crit' ? 'crit' : ns[0] === 'warn' ? 'warn' : 'info', `${next.at ? 'อยู่ที่' : 'กำลังไป'} ${next.name}${pv && !next.name.includes(pv.slice(0, 5)) ? ` (จ.${pv})` : ''} · ${ns[1]}`, 'route')}</div>` : `<div class="l1">${chip('good', 'ส่งงานครบแล้ว รอปิดทริป')}</div>`}`;
+  }
+  if (st === 'plan' || (st === 'repair' && plan)) {
+    const dest = (plan.jobs || []).filter(j => j.kind !== 'EMPTY').map(j => j.destination).filter(Boolean).join(' / ');
+    return `<div class="small"><b>ทริป ${esc(plan.no)}</b> · ออก ${thDate(plan.date)}${plan.loadAt ? ' โหลด ' + hhmm(plan.loadAt) : ''} · ${esc(tripOrigin(plan) || '')} → ${esc(dest || '-')}</div>`;
+  }
+  if (w) return `<div class="small">คิว ${pad(queuePos(w))} ที่ ${esc(siteName(w.siteId))} · เช็คอิน ${w.day === dayKey() ? thTime(w.at) : thDT(w.at)}${w.ready === false ? ' · แจ้งไม่พร้อม: ' + esc(w.issue || '-') : ''}</div>`;
+  if (last) { const ls = tripStops(last); const end = ls.length ? ls[ls.length - 1].name : ''; return `<div class="small muted">ทริปล่าสุด ${esc(last.no)}${end ? ' · ส่งที่ ' + esc(end) : ''} · ปิด ${thDT(last.closedAt)}</div>`; }
+  return '';
+}
+function fleetRow(x) {
+  const { v, st, run, plan, w, pos, m, spare } = x;
+  const [stText, stCls, stIc] = FLEET_ST[st];
+  const t = run || plan;
+  const drv = (t && t.driverId) || (w && w.driverId) || v.driverId;
+  const dname = drv ? driverName(drv) : (w && w.driverName) || '';
+  const phone = drv && S.d.drivers[drv] && S.d.drivers[drv].phone;
+  const ns = t && t.status === 'planned' ? notifyState(t) : null;
+  const chips = [
+    m.state === 'crit' || m.state === 'serious' || m.state === 'warn' ? chip(m.state, m.label, 'wrench') : '',
+    spare ? chip('serious', `ใช้หางสำรอง ${spare}`, 'trailer') : '',
+    t && !feedDone(t) ? chip(t.status === 'running' ? 'serious' : 'warn', 'ยังไม่คีย์ Feed Card', 'fuel') : '',
+    ns && ns.st ? chip(ns.st, ns.text, 'clock') : '',
+    st === 'repair' && plan ? chip('crit', 'สถานะซ่อมแต่มีทริปรอออก') : '',
+  ].filter(Boolean).join('');
+  return `<div class="row"><div class="main">
+    <div class="l1">${plate(v)} ${vt(v.type)} ${baseBadge(v.line)} ${chip(stCls, stText, stIc)} ${v.ownership === 'Partner' ? own(v) : ''}</div>
+    ${fleetActivity(x)}
+    ${pos ? `<div class="small meta">${icon('pin')} ตอนนี้ <b>${esc(posText(pos))}</b> · ${esc(agoText(pos.at))} · ${esc(posSrc(pos))} <a href="${esc(placeMapUrl(pos))}" target="_blank" rel="noopener">แผนที่</a></div>` : st === 'run' ? `<div class="small muted">${icon('pin')} ยังไม่มีตำแหน่ง</div>` : ''}
+    ${dname ? `<div class="small meta">${icon('user')} ${esc(dname)}${phone ? ` · <a href="tel:${esc(phone)}">${esc(phone)}</a>` : ''}</div>` : ''}
+    ${chips ? `<div class="l1">${chips}</div>` : ''}
+    <div class="actions">${t ? `<a class="btn sm" href="#trip-${esc(t.id)}">ดูทริป ${esc(t.no)}</a>` : ''}${st === 'idle' || st === 'queue' ? `<button class="btn sm" data-act="fleetDispatch" data-id="${esc(v.id)}">จัดงานให้คันนี้</button>` : ''}${m.state !== 'good' && m.state !== 'unknown' ? `<a class="btn sm ghost" href="#maint">Maintenance</a>` : ''}<button class="btn sm ghost" data-act="edit" data-col="vehicles" data-id="${esc(v.id)}" ${dis()}>แก้ไขรถ</button></div>
+  </div></div>`;
+}
+const fleetCount = rows => { const c = { run: 0, plan: 0, queue: 0, idle: 0, repair: 0, maint: 0, due: 0, spare: 0 }; rows.forEach(x => { c[x.st]++; if (needsMaint(x)) c.maint++; if (x.m.state === 'crit' || x.m.state === 'serious') c.due++; if (x.spare) c.spare++; }); return c; };
+PAGES.fleet = () => {
+  const F = ui.fleet; const all = fleetRows();
+  const base = F.line === 'all' ? all : all.filter(x => x.v.line === F.line);
+  const c = fleetCount(base);
+  let list = base;
+  if (F.f === 'maint') list = list.filter(needsMaint);
+  else if (F.f === 'spare') list = list.filter(x => x.spare);
+  else if (F.f !== 'all') list = list.filter(x => x.st === F.f);
+  const q = F.q.trim().toLowerCase().replace(/[\s-]/g, '');
+  if (q) list = list.filter(x => [x.v.plate, x.v.trailerPlate, driverName(x.v.driverId, '')].join(' ').toLowerCase().replace(/[\s-]/g, '').includes(q));
+  const prov = {};
+  base.filter(x => x.st === 'run' && x.pos && x.pos.province).forEach(x => { prov[x.pos.province] = (prov[x.pos.province] || 0) + 1; });
+  return `
+  ${seg('fleetLine', F.line, [['all', 'ทุกฐาน', all.length], ['south', 'ฐานใต้', all.filter(x => x.v.line === 'south').length], ['north', 'ฐานเหนือ', all.filter(x => x.v.line === 'north').length]])}
+  <div class="stats fleetstats">
+    ${[['run', 'กำลังวิ่ง'], ['plan', 'รอออกรถ'], ['queue', 'รอคิว'], ['idle', 'ว่าง'], ['repair', 'ซ่อม / งดใช้'], ['maint', 'Maintenance ต้องดูแล']].map(([k, l]) => `<button class="stat" data-act="fleetF" data-v="${k}" aria-pressed="${F.f === k}"><span class="lbl">${l}</span><span class="val">${c[k]}<small>คัน</small></span></button>`).join('')}
+  </div>
+  ${Object.keys(prov).length ? `<div class="note small"><b>รถที่กำลังวิ่งอยู่ในจังหวัด:</b> ${Object.entries(prov).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${esc(p)} ${n}`).join(' · ')}</div>` : ''}
+  <div class="sec-h">${seg('fleetF', ['all', 'spare'].includes(F.f) ? F.f : '', [['all', 'ทั้งหมด', base.length], ['spare', 'ใช้หางสำรอง', c.spare]])}
+    <button class="btn sm" data-act="gpsImport" ${dis()}>${icon('gps')}วางตำแหน่งจาก GPS</button></div>
+  <div class="field"><label class="sr" for="fq">ค้นหาทะเบียน</label><input id="fq" data-bind="fleet.q" data-rerender="debounce" value="${esc(F.q)}" placeholder="ค้นหาทะเบียนหัว หาง หรือชื่อคนขับ เช่น 63-7666"></div>
+  <div class="list">${list.length ? list.map(fleetRow).join('') : empty('ไม่มีรถในกลุ่มนี้', all.length ? 'ล้างตัวกรองด้านบน' : 'เพิ่มรถที่ ข้อมูลหลัก')}</div>
+  <p class="small muted">ตำแหน่ง = ล่าสุดจากคนขับกดส่ง หรือวางจาก GPS เทเลเทค · รายละเอียดดูต่อที่หน้าทริป คิวรถ และ Maintenance</p>`;
+};
+
 /* ---------- queue ---------- */
 PAGES.queue = () => {
   const d = S.d; const s = settings();
@@ -1142,6 +1328,8 @@ function queueRow(c, pos, s) {
       <div class="meta">${icon('user')} ${esc(driverName(c.driverId, c.driverName))}</div>
       <div class="meta num">${icon('clock')} เช็คอิน ${thDT(c.at)} · รอ ${dur(waited)}${c.odometer ? ` · ไมล์ ${fmt(num(c.odometer))}` : ''}</div>
       <div class="l1">${queueChip(c)} ${locChip(c)} ${c.ready === false ? chip('serious', 'ไม่พร้อม: ' + (c.issue || '-')) : chip('good', 'พร้อมรับงาน')} ${m && m.state !== 'good' ? chip(m.state === 'unknown' ? '' : m.state, m.label, 'wrench') : ''} ${stale ? chip('warn', 'รอนานผิดปกติ ตรวจสอบ') : ''}${v && num(c.odometer) !== null && num(v.currentKm) !== null && num(c.odometer) < num(v.currentKm) - 50 ? chip('warn', `เลขไมล์ที่แจ้งน้อยกว่าในระบบ (${fmt(num(v.currentKm))})`) : ''}</div>
+      ${c.spareTrailer ? `<div class="l1">${chip('serious', `ใช้หางสำรอง ${c.trailerPlate} (หางประจำ ${(v && v.trailerPlate) || '-'})`, 'trailer')}</div>` : ''}
+      ${Object.keys(c.photos || {}).length ? thumbs(c.photos, CI_LABEL) : c.noPhoto ? `<div class="l1">${chip('warn', 'ไม่มีรูปเซลฟี่ · ' + c.noPhoto)}</div>` : ''}
       ${c.note ? `<div class="small muted">หมายเหตุ: ${esc(c.note)}</div>` : ''}
       <div class="actions">${locLink(c, 'ดูตำแหน่ง')}<span style="flex:1"></span><button class="btn sm" data-act="ciCancel" data-id="${esc(c.id)}" ${dis()}>ยกเลิกคิว</button><button class="btn sm primary" data-act="ciDispatch" data-id="${esc(c.id)}" ${c.ready === false ? 'disabled' : ''}>จัดงานให้คันนี้</button></div>
     </div>
@@ -1187,8 +1375,12 @@ PAGES.checkin = () => {
     <div class="grid2">
       <div class="field"><label class="req" for="ci-veh">ทะเบียนรถ (หัว / 10 ล้อ)</label>
         <select id="ci-veh" data-bind="ci.vehicleId"><option value="">— เลือกทะเบียน —</option>${vehicles.map(v => `<option value="${esc(v.id)}" ${f.vehicleId === v.id ? 'selected' : ''}>${esc(v.plate)} · ${esc(v.type)} ล้อ</option>`).join('')}</select></div>
-      <div class="field"><label for="ci-trailer">ทะเบียนหาง (ถ้าไม่ใช่หางประจำ)</label><input id="ci-trailer" data-bind="ci.trailerPlate" value="${esc(f.trailerPlate)}" placeholder="เว้นว่างถ้าใช้หางประจำ"></div>
+      <div class="field"><label for="ci-trailer">ทะเบียนหาง (ถ้าไม่ใช่หางประจำ)</label><input id="ci-trailer" data-bind="ci.trailerPlate" data-rerender="debounce" value="${esc(f.trailerPlate)}" placeholder="${d.vehicles[f.vehicleId] && d.vehicles[f.vehicleId].trailerPlate ? 'หางประจำ ' + esc(d.vehicles[f.vehicleId].trailerPlate) + ' · เว้นว่างถ้าใช้หางประจำ' : 'เว้นว่างถ้าใช้หางประจำ'}"></div>
     </div>
+    ${isSpare(d.vehicles[f.vehicleId], f.trailerPlate.trim()) ? `<div class="note crit small">${icon('alert')} หาง ${esc(f.trailerPlate.trim())} ไม่ใช่หางประจำของรถคันนี้ (${esc(d.vehicles[f.vehicleId].trailerPlate)}) ระบบจะแจ้งฝ่ายจัดรถว่าใช้หางสำรอง</div>` : ''}
+    <div class="field"><span class="lbl req">รูปยืนยันตัวตนกับรถ</span>
+      <div class="podgrid">${CI_SLOTS.map(([k, l]) => `<label class="podslot ${f.photos[k] ? 'ok' : ''}" id="ci-slot-${k}"><input type="file" accept="image/*" capture="user" data-ciph="${k}" hidden><span class="thumb" id="ci-ph-${k}">${f.photos[k] ? `<img src="${f.photos[k].url}" alt="">` : icon('camera')}</span><span class="small"><b>${esc(l)}</b><br><span class="muted" id="ci-st-${k}">${f.photos[k] ? 'ถ่ายแล้ว · แตะเพื่อถ่ายใหม่' : 'แตะเพื่อถ่ายรูป'}</span></span></label>`).join('')}</div>
+      <span class="hint">ถ่ายเซลฟี่ให้เห็นหน้าคนขับคู่กับตัวรถ 1 รูป และคู่กับป้ายทะเบียน 1 รูป</span></div>
     ${cut !== null ? `<div class="field"><span class="lbl req">มาพร้อมงาน Backhaul จากภาคใต้ไหม</span>
       <div class="choice"><label><input type="radio" name="ci-bh" value="yes" data-bind="ci.withBackhaul" ${f.withBackhaul === 'yes' ? 'checked' : ''}>มีงาน Backhaul</label><label><input type="radio" name="ci-bh" value="no" data-bind="ci.withBackhaul" ${f.withBackhaul === 'no' ? 'checked' : ''}>ไม่มี (สแตนด์บาย)</label></div>
       <span class="hint">ตัดรอบ ${esc(site.backhaulCutoff)} น. รถมีงาน Backhaul ที่เช็คอินทันได้งานก่อน ถ้ามาหลังรอบจะต่อท้ายรถสแตนด์บาย</span></div>` : ''}
@@ -1213,6 +1405,27 @@ PAGES.checkin = () => {
     ${mine ? `<button type="button" class="btn ghost" data-act="ciShowTicket">กลับไปดูคิวของฉัน</button>` : ''}
   </form>`;
 };
+const CI_SLOTS = [['truck', 'เซลฟี่คู่กับรถ'], ['plate', 'เซลฟี่คู่กับป้ายทะเบียน']];
+const CI_LABEL = { truck: 'เซลฟี่คู่กับรถ', plate: 'เซลฟี่คู่ป้ายทะเบียน' };
+function thumbs(photos, labels) {
+  const ph = Object.entries(photos || {}); if (!ph.length) return '';
+  return `<div class="podthumbs">${ph.map(([k, ref]) => { const src = photoSrc(ref); const lab = labels[k] || k; const img = `<img src="${esc(src)}" alt="${esc(lab)}" loading="lazy">`; return `<figure>${String(ref).startsWith('data:') ? img : `<a href="${esc(src)}" target="_blank" rel="noopener">${img}</a>`}<figcaption>${esc(lab)}</figcaption></figure>`; }).join('')}</div>`;
+}
+// shrink a picked photo into a store and update its slot in place (no re-render while the picker has focus)
+async function pickPhoto(inp, store, k, prefix, okText) {
+  const f = inp.files && inp.files[0]; if (!f) return;
+  const stEl = $(`#${prefix}-st-${k}`); if (stEl) stEl.textContent = 'กำลังย่อรูป…';
+  try {
+    const shared = S.backend === 'db' && !S.demo;
+    const blob = await shrinkImage(f, shared ? 1280 : 480, shared ? 0.75 : 0.6);
+    if (store[k]) URL.revokeObjectURL(store[k].url);
+    store[k] = { blob, url: URL.createObjectURL(blob) };
+    const ph = $(`#${prefix}-ph-${k}`); if (ph) ph.innerHTML = `<img src="${store[k].url}" alt="">`;
+    if (stEl) stEl.textContent = okText || `${fmt(blob.size / 1024)} KB · แตะเพื่อถ่ายใหม่`;
+    const slot = $(`#${prefix}-slot-${k}`); if (slot) slot.classList.add('ok');
+  } catch { if (stEl) stEl.textContent = 'อ่านรูปนี้ไม่ได้ ลองถ่ายใหม่'; }
+  inp.value = '';
+}
 function ticket(c) {
   const d = S.d; const v = vehicleOf(c.vehicleId); const pos = c.status === 'waiting' ? queuePos(c) : null;
   const t = c.tripId && d.trips[c.tripId];
@@ -1223,7 +1436,7 @@ function ticket(c) {
       : `<span class="small muted">สถานะ</span><span class="site" style="font-size:22px">ได้งานแล้ว</span>${t ? `<span class="meta">ทริป ${esc(t.no)} · ${esc((t.jobs || []).filter(j => j.kind !== 'EMPTY').map(j => j.destination).filter(Boolean).join(' / ') || '-')}</span><span class="meta">วันออกรถ ${thDate(t.date)}</span>` : ''}`}
     <div class="l1" style="justify-content:center">${plate(v, 'lg')} ${vt(v && v.type)}</div>
     <span class="meta">${esc(driverName(c.driverId, c.driverName))} · เช็คอิน ${thDT(c.at)}</span>
-    <div class="l1" style="justify-content:center">${locChip(c)} ${c.ready === false ? chip('serious', 'แจ้งไม่พร้อม') : ''}</div>
+    <div class="l1" style="justify-content:center">${locChip(c)} ${c.ready === false ? chip('serious', 'แจ้งไม่พร้อม') : ''} ${Object.keys(c.photos || {}).length ? chip('good', `ส่งรูปยืนยันแล้ว ${Object.keys(c.photos).length} รูป`, 'camera') : ''} ${c.spareTrailer ? chip('serious', 'ใช้หางสำรอง ' + c.trailerPlate, 'trailer') : ''}</div>
     ${locLink(c, 'ดูตำแหน่งที่เช็คอิน')}
   </div>
   ${c.status === 'waiting' ? `<div class="rowflex" style="justify-content:center"><button class="btn danger" data-act="ciCancel" data-id="${esc(c.id)}" ${dis()}>ยกเลิกเช็คอิน</button><button class="btn" data-act="ciNew">เช็คอินคันอื่น</button></div>
@@ -1279,7 +1492,19 @@ async function submitCheckin() {
   const driverId = f.driverId === '__other' ? null : f.driverId;
   const dup = Object.values(d.checkins).find(c => c.status === 'waiting' && ((driverId && c.driverId === driverId) || c.vehicleId === f.vehicleId));
   if (dup) errs.push(`${dup.vehicleId === f.vehicleId ? 'รถคันนี้' : 'คนขับคนนี้'}อยู่ในคิวแล้ว (คิวที่ ${queuePos(dup)} ที่ ${siteName(dup.siteId)})`);
+  const shared = S.backend === 'db' && !S.demo;
+  const assets = shared ? await assetsNs() : null;
+  const canUpload = !shared || !!assets;
+  const missPh = CI_SLOTS.filter(([k]) => !f.photos[k]).map(([, l]) => l);
+  if (canUpload && missPh.length) errs.push('ถ่ายรูป ' + missPh.join(' และ '));
   if (errs.length) { f.err = errs.join(' · '); render({ force: true }); return; }
+  const photos = {};
+  if (canUpload) {
+    for (const [k] of CI_SLOTS) {
+      try { photos[k] = shared ? (await uploadPhoto(assets, f.photos[k].blob)).id : await blobToDataUrl(f.photos[k].blob); }
+      catch (e) { f.err = podUploadErr(e); render({ force: true }); return; }
+    }
+  }
   const L = f.loc;
   let distanceM = null, inRadius = null;
   if (L.lat !== null && site && site.lat !== null && site.lat !== undefined) { distanceM = Math.round(haversine(L, site)); inRadius = distanceM <= (num(site.radiusM) || s.defaultRadiusM); }
@@ -1289,11 +1514,13 @@ async function submitCheckin() {
     vehicleId: f.vehicleId, trailerPlate: f.trailerPlate.trim() || null, siteId: f.siteId, withBackhaul: cut !== null ? f.withBackhaul === 'yes' : null,
     lat: L.lat, lng: L.lng, accuracyM: L.acc || null, locSource: L.source || 'link', mapsUrl: L.lat !== null ? mapsUrl(L.lat, L.lng) : L.url,
     distanceM, inRadius, odometer: num(f.odometer), ready: f.ready !== 'no', issue: f.ready === 'no' ? f.issue.trim() : '', note: f.note.trim(),
+    photos, noPhoto: canUpload ? '' : 'แนบรูปไม่ได้ในหน้านี้', spareTrailer: isSpare(d.vehicles[f.vehicleId], f.trailerPlate.trim()),
     status: 'waiting', tripId: null, by: S.uid || null,
   };
   try { await put('checkins', id, rec); } catch { return; }
   ls.set('ssc-me', { driverId: f.driverId, vehicleId: f.vehicleId, siteId: f.siteId });
-  Object.assign(f, { err: '', showForm: false, odometer: '', issue: '', note: '', loc: null, locText: '', locMsg: '', ready: 'yes', trailerPlate: '', withBackhaul: '' });
+  Object.values(f.photos).forEach(x => x.url && URL.revokeObjectURL(x.url));
+  Object.assign(f, { err: '', showForm: false, odometer: '', issue: '', note: '', loc: null, locText: '', locMsg: '', ready: 'yes', trailerPlate: '', withBackhaul: '', photos: {} });
   toast('เช็คอินแล้ว รอเรียกตามคิว');
   render({ force: true });
 }
@@ -1384,27 +1611,44 @@ function parseSortRows(text) {
 }
 
 /* ---------- parcels (เบ็ดเตล็ด / ขนม รายบิล) ---------- */
+// late parcels: past the due date and not delivered yet (follow these up first)
+const daysLate = p => { if (!p.dueDate) return 0; const end = p.status === 'delivered' && p.deliveredAt ? dayKey(new Date(p.deliveredAt)) : dayKey(); return Math.round((new Date(end + 'T12:00') - new Date(p.dueDate + 'T12:00')) / 86400000); };
+const isLate = p => p.status !== 'delivered' && p.status !== 'cancel' && !!p.dueDate && p.dueDate < dayKey();
+function whereNow(p) {
+  const t = p.tripId && S.d.trips[p.tripId];
+  if (p.status === 'arrived') return `ถึง${esc(siteName(p.arrivedBranchId || p.branchId))}แล้ว รอส่งลูกค้า`;
+  if (t && t.status === 'running') return `อยู่บนรถ ${esc((vehicleOf(t.vehicleId) || {}).plate || '')} ทริป ${esc(t.no)}${t.pos ? ' · ' + esc(placeText(t.pos)) : ''}`;
+  if (t && t.status === 'planned') return `จัดขึ้นทริป ${esc(t.no)} แล้ว รอออกรถ`;
+  if (p.status === 'loaded') return 'ขึ้นรถแล้ว';
+  return 'ยังอยู่คลังสาย 3 ยังไม่ได้ขึ้นรถ';
+}
 PAGES.parcels = () => {
   const P = ui.parcels; let list = Object.values(S.d.parcels);
   const cnt = st => list.filter(p => p.status === st).length;
-  if (P.status !== 'all') list = list.filter(p => p.status === P.status);
+  const lateAll = list.filter(isLate);
+  if (P.status === 'late') list = lateAll;
+  else if (P.status !== 'all') list = list.filter(p => p.status === P.status);
   if (P.q.trim()) { const q = P.q.trim().toLowerCase().replace(/\s/g, ''); list = Object.values(S.d.parcels).filter(p => [p.no, p.senderName, p.senderPhone, p.receiverName, p.receiverPhone, p.province].join(' ').toLowerCase().replace(/\s/g, '').includes(q)); }
-  if (P.status === 'all' || P.status === 'delivered') list.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  if (P.status === 'late' && !P.q.trim()) list.sort((a, b) => daysLate(b) - daysLate(a) || String(a.createdAt).localeCompare(String(b.createdAt)));
+  else if (P.status === 'all' || P.status === 'delivered') list.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   else list.sort((a, b) => String(a.dueDate || '9999').localeCompare(String(b.dueDate || '9999')) || String(a.createdAt).localeCompare(String(b.createdAt)));
   const groups = parcelGroups();
   return `
-  <div class="sec-h">${seg('parcelStatus', P.status, [['received', 'รอขึ้นรถ', cnt('received')], ['loaded', 'ขึ้นรถแล้ว', cnt('loaded')], ['arrived', 'ถึงปลายทาง', cnt('arrived')], ['delivered', 'ส่งแล้ว', cnt('delivered')], ['all', 'ทั้งหมด']])}
-    <div class="rowflex"><a class="btn" href="#scan">${icon('scan')}ยิงบาร์โค้ด</a><a class="btn primary" href="#receive">${icon('plus')}รับพัสดุ</a></div></div>
+  <div class="sec-h">${seg('parcelStatus', P.status, [['late', 'ล่าช้า', lateAll.length], ['received', 'รอขึ้นรถ', cnt('received')], ['loaded', 'ขึ้นรถแล้ว', cnt('loaded')], ['arrived', 'ถึงปลายทาง', cnt('arrived')], ['delivered', 'ส่งแล้ว', cnt('delivered')], ['all', 'ทั้งหมด']])}
+    <div class="rowflex"><a class="btn" href="#scan">${icon('scan')}ยิงบาร์โค้ด</a><a class="btn" href="#cashier">${icon('cash')}แคชเชียร์</a><a class="btn primary" href="#receive">${icon('plus')}รับพัสดุ</a></div></div>
   <div class="field"><label class="sr" for="pq">ค้นหา</label><input id="pq" data-bind="parcels.q" data-rerender="debounce" value="${esc(P.q)}" placeholder="ค้นด้วยเลขพัสดุ ชื่อ หรือเบอร์โทร ผู้ส่ง/ผู้รับ"></div>
   ${P.status === 'received' && !P.q.trim() && groups.length ? `<section class="sec"><div class="sec-h"><h2>รอขึ้นรถ แยกปลายทาง</h2><a class="btn sm" href="#dispatch">นำไปจัดรถ</a></div>
     <div class="tbl-wrap"><table><thead><tr><th>ปลายทาง</th><th class="r">บิล</th><th class="r">กล่อง</th><th class="r">กก.</th><th class="r">ค่าส่ง</th><th class="r">เก็บปลายทาง</th><th>ส่งเร็วสุด</th></tr></thead><tbody>${groups.map(g => `<tr><td>${esc(g.name)}</td><td class="r">${g.parcels.length}</td><td class="r">${fmt(g.boxes)}</td><td class="r">${fmt(g.weightKg)}</td><td class="r">${money(g.fee)}</td><td class="r">${money(g.cod)}</td><td>${g.earliestDue ? thDate(g.earliestDue) : '–'}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
-  <div class="list">${list.length ? list.slice(0, 200).map(parcelRow).join('') : empty(P.q.trim() ? 'ไม่พบพัสดุที่ค้นหา' : 'ไม่มีพัสดุในกลุ่มนี้', 'กด "รับพัสดุ" เพื่อบันทึกบิลใหม่และพิมพ์ลาเบล')}</div>`;
+  ${P.status === 'late' && !P.q.trim() ? `<div class="note ${lateAll.length ? 'crit' : 'good'} small">${lateAll.length ? `พัสดุเลยกำหนดส่งถึงลูกค้า ${lateAll.length} บิล เรียงจากช้ามากสุด ตามงานก่อน (${[['ยังอยู่สาย 3', lateAll.filter(p => p.status === 'received' && !tripLeft(p.tripId)).length], ['อยู่บนรถ', lateAll.filter(p => tripLeft(p.tripId) && p.status !== 'arrived').length], ['ถึงสาขารอส่ง', lateAll.filter(p => p.status === 'arrived').length]].filter(x => x[1]).map(x => x.join(' ')).join(' · ')})` : 'ไม่มีพัสดุที่เลยกำหนดส่ง'}</div>` : ''}
+  <div class="list">${list.length ? list.slice(0, 200).map(parcelRow).join('') : empty(P.q.trim() ? 'ไม่พบพัสดุที่ค้นหา' : 'ไม่มีพัสดุในกลุ่มนี้', P.status === 'late' ? 'พัสดุทุกบิลอยู่ในกำหนดส่ง' : 'กด "รับพัสดุ" เพื่อบันทึกบิลใหม่และพิมพ์ลาเบล')}</div>
+  ${P.status === 'late' && !P.q.trim() ? (() => { const done = Object.values(S.d.parcels).filter(p => p.status === 'delivered' && daysLate(p) > 0 && p.deliveredAt && Date.now() - new Date(p.deliveredAt) < 30 * 86400000); return done.length ? `<details class="more card pad"><summary>ส่งแล้วแต่ช้ากว่ากำหนด 30 วันล่าสุด (${done.length})</summary><div class="list" style="margin-top:10px">${done.map(parcelRow).join('')}</div></details>` : ''; })() : ''}`;
 };
 function parcelRow(p) {
   const t = p.tripId && S.d.trips[p.tripId];
   const lb = boxCount(p, 'loaded'), ab = boxCount(p, 'arrived');
   return `<a class="row" href="#parcel-${esc(p.id)}" style="text-decoration:none;color:inherit"><div class="main">
-    <div class="l1"><span class="trk">${esc(p.no)}</span> ${statusChip(PARCEL_STATUS, p.status)} <span class="small muted">${esc(p.category || '')}${p.category === 'ขนม' ? ' · งานสัญญา' : ''}</span> ${dueChip(p.dueDate, p.status === 'delivered' || p.status === 'cancel')}</div>
+    <div class="l1"><span class="trk">${esc(p.no)}</span> ${statusChip(PARCEL_STATUS, p.status)} <span class="small muted">${esc(p.category || '')}${p.category === 'ขนม' ? ' · งานสัญญา' : ''}</span> ${isLate(p) ? chip('crit', `ช้า ${daysLate(p)} วัน`, 'clock') : p.status === 'delivered' && daysLate(p) > 0 ? chip('warn', `ส่งช้า ${daysLate(p)} วัน`, 'clock') : dueChip(p.dueDate, p.status === 'delivered' || p.status === 'cancel')}${p.payer !== 'cod' && p.status !== 'cancel' && p.day === dayKey() && !p.paid ? chip('warn', 'ยังไม่ชำระค่าส่ง', 'cash') : ''}</div>
+    ${isLate(p) ? `<div class="small meta">${icon('pin')} ${whereNow(p)}</div>` : ''}
     <div class="meta">${esc(p.senderName || '-')} → <b>${esc(p.receiverName || '-')}</b> · ${esc(p.province || '')}${p.branchId ? ' · ' + esc(siteName(p.branchId)) : ''}${p.deliveryMode === 'pickup' ? ' · ลูกค้ารับเอง' : ''}</div>
     <div class="l1 small meta num">${fmt(num(p.boxes))} กล่อง · ${fmt(num(p.weightKg), 1)} กก. · ค่าส่ง ${money(num(p.fee))} ${p.payer === 'cod' ? chip(p.codCollected ? 'good' : 'warn', p.codCollected ? 'เก็บค่าส่งแล้ว' : 'เก็บค่าส่งปลายทาง') : ''}${t ? ` · ทริป ${esc(t.no)}` : ''}${(p.status === 'received' && lb) || (p.status === 'loaded' && ab) ? ` · <span class="prog">ขึ้นรถ ${lb}/${p.boxes} ถึงปลายทาง ${ab}/${p.boxes}</span>` : ''}</div>
   </div></a>`;
@@ -1413,27 +1657,28 @@ PAGES.receive = () => {
   const r = ui.rcv; const brs = branches();
   return `
   <form class="card pad stack" data-form="receive" novalidate>
-    <h2>รับพัสดุเข้าคลังสาย 3</h2>
-    <p class="meta">บันทึกบิลขนม / เบ็ดเตล็ด แล้วพิมพ์ลาเบลติดทุกกล่อง ปลายทางยิงลาเบลเพื่อยืนยันว่าของถึงแล้ว</p>
+    <h2>รับพัสดุหน้าร้าน (Checker)</h2>
+    <p class="meta">บันทึกบิลขนม / เบ็ดเตล็ด แล้วพิมพ์ลาเบลติดทุกกล่อง พัสดุเข้าหน้า จัดรถ อัตโนมัติ ผู้ส่งจ่ายเงินที่แคชเชียร์โดยยิงลาเบล</p>
     <div class="field"><span class="lbl req">ประเภทงาน</span><div class="choice">${[['เบ็ดเตล็ด', 'เบ็ดเตล็ด (ลูกค้ารายย่อย)'], ['ขนม', 'ขนม (งานสัญญา · อาหารยอดคุณ)']].map(([c, l]) => `<label><input type="radio" name="rc-cat" value="${c}" data-bind="rcv.category" data-rerender="all" ${r.category === c ? 'checked' : ''}>${l}</label>`).join('')}</div></div>
     <div class="field"><label class="req" for="rc-due">กำหนดส่งถึงลูกค้า</label><input id="rc-due" type="date" data-bind="rcv.dueDate" value="${esc(r.dueDate)}"><span class="hint">${r.category === 'ขนม' ? 'งานสัญญา: ใส่ตามวันกำหนดส่งในบิล' : `เบ็ดเตล็ด: ค่าเริ่มต้นอีก ${fmt(settings().hubDays)} วัน (ฮับกระจายไม่เกิน ${fmt(settings().hubDays)} วัน)`}</span></div>
     <h3>ผู้ส่ง</h3>
     <div class="grid2"><div class="field"><label class="req" for="rc-sn">ชื่อผู้ส่ง</label><input id="rc-sn" data-bind="rcv.senderName" value="${esc(r.senderName)}"></div><div class="field"><label class="req" for="rc-sp">เบอร์โทรผู้ส่ง</label><input id="rc-sp" type="tel" data-bind="rcv.senderPhone" value="${esc(r.senderPhone)}"></div></div>
+    <div class="field"><label for="rc-sa">ที่อยู่ผู้ส่ง</label><input id="rc-sa" data-bind="rcv.senderAddress" value="${esc(r.senderAddress)}" placeholder="ไม่บังคับ"></div>
     <h3>ผู้รับ</h3>
     <div class="grid2"><div class="field"><label class="req" for="rc-rn">ชื่อผู้รับ</label><input id="rc-rn" data-bind="rcv.receiverName" value="${esc(r.receiverName)}"></div><div class="field"><label class="req" for="rc-rp">เบอร์โทรผู้รับ</label><input id="rc-rp" type="tel" data-bind="rcv.receiverPhone" value="${esc(r.receiverPhone)}"></div></div>
-    <div class="field"><label for="rc-ra">ที่อยู่ผู้รับ</label><input id="rc-ra" data-bind="rcv.receiverAddress" value="${esc(r.receiverAddress)}" placeholder="ไม่บังคับ ถ้าลูกค้ามารับเอง"></div>
+    <div class="field"><label class="${r.deliveryMode !== 'pickup' ? 'req' : ''}" for="rc-ra">ที่อยู่ผู้รับ</label><input id="rc-ra" data-bind="rcv.receiverAddress" value="${esc(r.receiverAddress)}" placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ (ไม่บังคับถ้าลูกค้ามารับเอง)"></div>
     <div class="grid2">
       <div class="field"><label class="req" for="rc-pv">จังหวัดปลายทาง</label><select id="rc-pv" data-bind="rcv.province" data-rerender="all"><option value="">— เลือกจังหวัด —</option>${PROVINCES.map(p => `<option value="${p}" ${r.province === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
       <div class="field"><label for="rc-br">สาขา / จุดกระจายปลายทาง</label><select id="rc-br" data-bind="rcv.branchId"><option value="">— ไม่ระบุ —</option>${brs.map(b => `<option value="${esc(b.id)}" ${r.branchId === b.id ? 'selected' : ''}>${esc(b.name)}${b.operator ? ' · ' + esc(b.operator) : ''}</option>`).join('')}</select><span class="hint">เลือกให้อัตโนมัติตามจังหวัด เปลี่ยนได้</span></div>
     </div>
-    <div class="field"><span class="lbl">ปลายทางส่งให้ลูกค้าแบบไหน</span><div class="choice"><label><input type="radio" name="rc-dm" value="branch" data-bind="rcv.deliveryMode" ${r.deliveryMode !== 'pickup' ? 'checked' : ''}>สาขา/Partner ส่งถึงลูกค้า</label><label><input type="radio" name="rc-dm" value="pickup" data-bind="rcv.deliveryMode" ${r.deliveryMode === 'pickup' ? 'checked' : ''}>ลูกค้ามารับเอง</label></div></div>
+    <div class="field"><span class="lbl">ปลายทางส่งให้ลูกค้าแบบไหน</span><div class="choice"><label><input type="radio" name="rc-dm" value="branch" data-bind="rcv.deliveryMode" data-rerender="all" ${r.deliveryMode !== 'pickup' ? 'checked' : ''}>สาขา/Partner ส่งถึงลูกค้า</label><label><input type="radio" name="rc-dm" value="pickup" data-bind="rcv.deliveryMode" data-rerender="all" ${r.deliveryMode === 'pickup' ? 'checked' : ''}>ลูกค้ามารับเอง</label></div></div>
     <div class="grid3">
-      <div class="field"><label class="req" for="rc-bx">จำนวนกล่อง</label><input id="rc-bx" inputmode="numeric" data-bind="rcv.boxes" value="${esc(r.boxes)}"></div>
+      <div class="field"><label class="req" for="rc-bx">จำนวน (กล่อง / ชิ้น)</label><input id="rc-bx" inputmode="numeric" data-bind="rcv.boxes" value="${esc(r.boxes)}"></div>
       <div class="field"><label class="req" for="rc-w">น้ำหนักรวม (กก.)</label><input id="rc-w" inputmode="decimal" data-bind="rcv.weightKg" value="${esc(r.weightKg)}"></div>
       <div class="field"><label class="req" for="rc-fee">ค่าขนส่ง (บาท)</label><input id="rc-fee" inputmode="decimal" data-bind="rcv.fee" value="${esc(r.fee)}"><span class="hint">รออัตราค่าขนส่งจริง ตอนนี้กรอกเอง</span></div>
     </div>
     <div class="field"><span class="lbl req">ใครจ่ายค่าขนส่ง</span><div class="choice"><label><input type="radio" name="rc-pay" value="origin" data-bind="rcv.payer" ${r.payer !== 'cod' ? 'checked' : ''}>ผู้ส่งจ่ายที่ต้นทาง</label><label><input type="radio" name="rc-pay" value="cod" data-bind="rcv.payer" ${r.payer === 'cod' ? 'checked' : ''}>เก็บปลายทาง (ค่าขนส่งเท่านั้น)</label></div></div>
-    <div class="field"><label for="rc-desc">รายละเอียดสินค้า</label><input id="rc-desc" data-bind="rcv.description" value="${esc(r.description)}" placeholder="เช่น อะไหล่ 1 ลัง, ขนมปี๊บ"></div>
+    <div class="field"><label class="req" for="rc-desc">สินค้า</label><input id="rc-desc" data-bind="rcv.description" value="${esc(r.description)}" placeholder="เช่น อะไหล่ 1 ลัง, ขนมปี๊บ"></div>
     <div class="field"><label for="rc-note">หมายเหตุ</label><input id="rc-note" data-bind="rcv.note" value="${esc(r.note)}"></div>
     ${r.err ? `<div class="errbox" role="alert">${esc(r.err)}</div>` : ''}
     <button class="btn primary big" type="submit" ${dis()}>${icon('check')}บันทึกและออกลาเบล</button>
@@ -1474,6 +1719,8 @@ async function submitReceive() {
   if (!r.senderName.trim()) errs.push('ชื่อผู้ส่ง'); if (!r.senderPhone.trim()) errs.push('เบอร์ผู้ส่ง');
   if (!r.receiverName.trim()) errs.push('ชื่อผู้รับ'); if (!r.receiverPhone.trim()) errs.push('เบอร์ผู้รับ');
   if (!r.province) errs.push('จังหวัดปลายทาง');
+  if (r.deliveryMode !== 'pickup' && !r.receiverAddress.trim()) errs.push('ที่อยู่ผู้รับ');
+  if (!r.description.trim()) errs.push('สินค้า');
   const boxes = num(r.boxes), w = num(r.weightKg), fee = num(r.fee);
   if (!boxes || boxes < 1 || boxes > 200 || Math.round(boxes) !== boxes) errs.push('จำนวนกล่อง (1–200)');
   if (w === null || w <= 0) errs.push('น้ำหนัก'); if (fee === null || fee < 0) errs.push('ค่าขนส่ง');
@@ -1482,9 +1729,9 @@ async function submitReceive() {
   if (r.dueDate < dayKey()) { r.err = 'กำหนดส่งถึงลูกค้าต้องไม่ใช่วันที่ผ่านมาแล้ว'; render({ force: true }); return; }
   const now = new Date(); const day = dayKey(now); const id = uid();
   let no; try { no = await claimParcelNo(day); } catch { no = parcelPrefix(day) + pad(localParcelMax(day) + 1, 4); }
-  const p = { no, day, createdAt: now.toISOString(), category: r.category, contract: r.category === 'ขนม', dueDate: r.dueDate, senderName: r.senderName.trim(), senderPhone: r.senderPhone.trim(), receiverName: r.receiverName.trim(), receiverPhone: r.receiverPhone.trim(), receiverAddress: r.receiverAddress.trim(), province: r.province, branchId: r.branchId || null, deliveryMode: r.deliveryMode, boxes, weightKg: w, description: r.description.trim(), fee, payer: r.payer, codCollected: false, status: 'received', tripId: null, scans: { loaded: {}, arrived: {} }, events: [{ s: 'received', at: now.toISOString() }], note: r.note.trim(), by: S.uid || null };
+  const p = { no, day, createdAt: now.toISOString(), category: r.category, contract: r.category === 'ขนม', dueDate: r.dueDate, senderName: r.senderName.trim(), senderPhone: r.senderPhone.trim(), senderAddress: r.senderAddress.trim(), receiverName: r.receiverName.trim(), receiverPhone: r.receiverPhone.trim(), receiverAddress: r.receiverAddress.trim(), province: r.province, branchId: r.branchId || null, deliveryMode: r.deliveryMode, boxes, weightKg: w, description: r.description.trim(), fee, payer: r.payer, codCollected: false, status: 'received', tripId: null, scans: { loaded: {}, arrived: {} }, events: [{ s: 'received', at: now.toISOString() }], note: r.note.trim(), by: S.uid || null };
   try { await put('parcels', id, p); } catch { return; }
-  const keep = { senderName: r.senderName, senderPhone: r.senderPhone, category: r.category, dueDate: r.category === 'ขนม' ? '' : addDays(dayKey(), settings().hubDays) };
+  const keep = { senderName: r.senderName, senderPhone: r.senderPhone, senderAddress: r.senderAddress, category: r.category, dueDate: r.category === 'ขนม' ? '' : addDays(dayKey(), settings().hubDays) };
   ui.rcv = { ...blankRcv(), ...keep };
   toast(`บันทึกพัสดุ ${p.no} แล้ว พิมพ์ลาเบลได้เลย`);
   location.hash = '#parcel-' + id;
@@ -1494,24 +1741,25 @@ PAGES.parcel = id => {
   if (!p) return `<a class="btn ghost" href="#parcels">${icon('back')}พัสดุทั้งหมด</a><div class="card">${empty('ไม่พบพัสดุนี้', 'อาจถูกลบหรือยังโหลดไม่เสร็จ')}</div>`;
   const t = p.tripId && S.d.trips[p.tripId];
   const lb = boxCount(p, 'loaded'), ab = boxCount(p, 'arrived');
-  const EV = { received: 'รับเข้าคลังสาย 3', loaded: 'ขึ้นรถครบทุกกล่อง', arrived: 'ถึงปลายทางครบทุกกล่อง', delivered: 'ส่งให้ลูกค้าสำเร็จ', cancel: 'ยกเลิก', cod: 'เก็บค่าส่งปลายทางแล้ว' };
+  const EV = { paid: 'ผู้ส่งชำระค่าส่งแล้ว', received: 'รับเข้าคลังสาย 3', loaded: 'ขึ้นรถครบทุกกล่อง', arrived: 'ถึงปลายทางครบทุกกล่อง', delivered: 'ส่งให้ลูกค้าสำเร็จ', cancel: 'ยกเลิก', cod: 'เก็บค่าส่งปลายทางแล้ว' };
   return `
   <a class="btn ghost" href="#parcels" style="align-self:flex-start">${icon('back')}พัสดุทั้งหมด</a>
   <div class="card pad stack">
     <div class="l1"><h2 class="trk" style="font-size:20px">${esc(p.no)}</h2> ${statusChip(PARCEL_STATUS, p.status)} <span class="small muted">${esc(p.category || '')}${p.category === 'ขนม' ? ' · งานสัญญา' : ''}</span> ${dueChip(p.dueDate, p.status === 'delivered' || p.status === 'cancel')}</div>
     <div class="grid2">
-      <div class="stack" style="gap:2px"><span class="small muted">ผู้ส่ง</span><b>${esc(p.senderName)}</b><span class="meta">${esc(p.senderPhone)}</span></div>
+      <div class="stack" style="gap:2px"><span class="small muted">ผู้ส่ง</span><b>${esc(p.senderName)}</b><span class="meta">${esc(p.senderPhone)}${p.senderAddress ? ' · ' + esc(p.senderAddress) : ''}</span></div>
       <div class="stack" style="gap:2px"><span class="small muted">ผู้รับ</span><b>${esc(p.receiverName)}</b><span class="meta">${esc(p.receiverPhone)}${p.receiverAddress ? ' · ' + esc(p.receiverAddress) : ''}</span></div>
     </div>
     <div class="kv">
       <div><span>ปลายทาง</span><b>${esc(p.province || '-')}</b><em>${p.branchId ? esc(siteName(p.branchId)) : 'ยังไม่ระบุสาขา'} · ${p.deliveryMode === 'pickup' ? 'ลูกค้ารับเอง' : 'ส่งถึงลูกค้า'}</em></div>
       <div><span>กล่อง / น้ำหนัก</span><b>${fmt(num(p.boxes))} / ${fmt(num(p.weightKg), 1)} กก.</b><em>ขึ้นรถ ${lb}/${p.boxes} · ถึงปลายทาง ${ab}/${p.boxes}</em></div>
-      <div><span>ค่าขนส่ง</span><b>${money(num(p.fee))}</b><em>${p.payer === 'cod' ? (p.codCollected ? 'เก็บปลายทางแล้ว' : 'เก็บปลายทาง (ยังไม่ได้เก็บ)') : 'ผู้ส่งจ่ายที่ต้นทาง'}</em></div>
+      <div><span>ค่าขนส่ง</span><b>${money(num(p.fee))}</b><em>${p.payer === 'cod' ? (p.codCollected ? 'เก็บปลายทางแล้ว' : 'เก็บปลายทาง (ยังไม่ได้เก็บ)') : p.paid ? `ผู้ส่งจ่ายแล้ว ${p.paid.method === 'transfer' ? '(โอน)' : '(เงินสด)'} ${thDT(p.paid.at)}` : 'ผู้ส่งจ่ายที่ต้นทาง · ยังไม่ชำระ'}</em></div>
       <div><span>ทริป</span><b>${t ? `<a href="#trip-${esc(t.id)}">${esc(t.no)}</a>` : '–'}</b><em>${t ? esc(plateText(t)) : 'ยังไม่ได้ขึ้นรถ'}</em></div>
     </div>
     ${p.description ? `<p class="meta">สินค้า: ${esc(p.description)}</p>` : ''}${p.note ? `<p class="small muted">หมายเหตุ: ${esc(p.note)}</p>` : ''}
     ${p.podName ? `<p class="meta">ผู้รับของ: <b>${esc(p.podName)}</b> · ${thDT(p.deliveredAt)}</p>` : ''}
     <div class="actions">
+      ${parcelDue(p) ? `<button class="btn primary" data-act="cashForParcel" data-id="${esc(p.id)}">${icon('cash')}ไปแคชเชียร์ รับเงิน ${money(num(p.fee))}</button>` : ''}
       ${p.status === 'arrived' || p.status === 'loaded' ? `<button class="btn primary" data-act="parcelDeliver" data-id="${esc(p.id)}" ${dis()}>${icon('check')}บันทึกส่งสำเร็จ</button>` : ''}
       ${p.status === 'delivered' && p.payer === 'cod' && !p.codCollected ? `<button class="btn primary" data-act="parcelCod" data-id="${esc(p.id)}" ${dis()}>บันทึกเก็บค่าส่งแล้ว</button>` : ''}
       ${p.status === 'received' ? `<button class="btn" data-act="edit" data-col="parcels" data-id="${esc(p.id)}" ${dis()}>แก้ไข</button><button class="btn danger" data-act="parcelCancel" data-id="${esc(p.id)}" ${dis()}>ยกเลิกพัสดุ</button>` : ''}
@@ -1533,6 +1781,7 @@ function labelHtml(p, i) {
     <div class="prov">${esc(p.province || '-')}</div>
     <div class="row2"><span>${p.branchId ? esc(siteName(p.branchId)) : ''}</span><span>${p.deliveryMode === 'pickup' ? 'ลูกค้ารับเอง' : 'ส่งถึงลูกค้า'}</span></div>
     <div><b>ผู้รับ:</b> ${esc(p.receiverName)} ${esc(p.receiverPhone)}</div>
+    ${p.receiverAddress ? `<div class="addr">${esc(p.receiverAddress)}</div>` : ''}
     <div><b>ผู้ส่ง:</b> ${esc(p.senderName)} ${esc(p.senderPhone)}</div>
     <div class="row2"><span>${fmt(num(p.weightKg), 1)} กก. (รวม) · รับ ${thDate(p.day)}</span><span><b>ส่งภายใน ${p.dueDate ? thDate(p.dueDate) : '–'}</b></span></div>
     ${p.payer === 'cod' ? `<span class="cod">เก็บค่าส่งปลายทาง ${money(num(p.fee))}</span>` : ''}
@@ -1555,14 +1804,15 @@ function labelCanvas(p, i) {
   g.fillRect(24, 70, W - 48, 3);
   g.font = `700 76px ${F}`; g.fillText(p.province || '-', 24, 82);
   g.font = `500 26px ${F}`; g.fillText(`${p.branchId ? siteName(p.branchId) + ' · ' : ''}${p.deliveryMode === 'pickup' ? 'ลูกค้ารับเอง' : 'ส่งถึงลูกค้า'}`, 24, 178);
-  g.font = `600 28px ${F}`; g.fillText(`ผู้รับ: ${p.receiverName} ${p.receiverPhone}`.slice(0, 48), 24, 220);
-  g.font = `500 24px ${F}`; g.fillText(`ผู้ส่ง: ${p.senderName} ${p.senderPhone}`.slice(0, 56), 24, 260);
-  g.fillText(`${fmt(num(p.weightKg), 1)} กก. (รวม) · รับ ${thDate(p.day)}`, 24, 296);
-  if (p.dueDate) { g.font = `700 28px ${F}`; g.textAlign = 'right'; g.fillText(`ส่งภายใน ${thDate(p.dueDate)}`, W - 24, 296); g.textAlign = 'left'; }
-  if (p.payer === 'cod') { g.font = `700 28px ${F}`; const txt = `เก็บค่าส่งปลายทาง ${money(num(p.fee))}`; const tw = g.measureText(txt).width; g.strokeRect(24, 334, tw + 24, 44); g.fillText(txt, 36, 340); }
+  g.font = `600 28px ${F}`; g.fillText(`ผู้รับ: ${p.receiverName} ${p.receiverPhone}`.slice(0, 48), 24, 214);
+  if (p.receiverAddress) { g.font = `500 22px ${F}`; g.fillText(String(p.receiverAddress).slice(0, 64), 24, 250); }
+  g.font = `500 24px ${F}`; g.fillText(`ผู้ส่ง: ${p.senderName} ${p.senderPhone}`.slice(0, 56), 24, 282);
+  g.fillText(`${fmt(num(p.weightKg), 1)} กก. (รวม) · รับ ${thDate(p.day)}`, 24, 316);
+  if (p.dueDate) { g.font = `700 28px ${F}`; g.textAlign = 'right'; g.fillText(`ส่งภายใน ${thDate(p.dueDate)}`, W - 24, 316); g.textAlign = 'left'; }
+  if (p.payer === 'cod') { g.font = `700 26px ${F}`; const txt = `เก็บค่าส่งปลายทาง ${money(num(p.fee))}`; const tw = g.measureText(txt).width; g.strokeRect(24, 352, tw + 24, 40); g.fillText(txt, 36, 357); }
   const bc = document.createElement('canvas');
-  if (window.JsBarcode) { try { window.JsBarcode(bc, boxCode(p, i), { format: 'CODE128', displayValue: false, margin: 0, height: 130, width: 4 }); } catch {} }
-  if (bc.width > 0 && bc.height > 0) { const bw = Math.min(W - 48, bc.width), bh = 130; g.drawImage(bc, (W - bw) / 2, 396, bw, bh); }
+  if (window.JsBarcode) { try { window.JsBarcode(bc, boxCode(p, i), { format: 'CODE128', displayValue: false, margin: 0, height: 120, width: 4 }); } catch {} }
+  if (bc.width > 0 && bc.height > 0) { const bw = Math.min(W - 48, bc.width), bh = 120; g.drawImage(bc, (W - bw) / 2, 404, bw, bh); }
   g.font = `600 30px "IBM Plex Mono",monospace`; g.textAlign = 'center'; g.fillText(boxCode(p, i), W / 2, 536); g.textAlign = 'left';
   return cv;
 }
@@ -1584,6 +1834,243 @@ async function saveFile(filename, blob) {
   }
   const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
+
+/* ---------- งานเหมา: customer picks the pickup and drop points, we quote a price ---------- */
+const QUOTE_STATUS = { draft: ['ร่าง', ''], sent: ['ส่งลูกค้าแล้ว', 'info'], won: ['ลูกค้าตกลง', 'good'], lost: ['ไม่ได้งาน', ''] };
+const COMPANY = 'บริษัท ภูเก็ตศรีสุชาติขนส่ง';
+function placeFrom(name, locText) {
+  const nm = String(name || '').trim(); const L = parseLoc(locText);
+  if (L && L.lat !== null && L.lat !== undefined) return { name: nm, lat: L.lat, lng: L.lng, mapsUrl: L.url || null };
+  const st = siteFor(nm); if (st && hasPin(st)) return { name: nm, lat: +st.lat, lng: +st.lng, siteId: st.id, mapsUrl: st.mapsUrl || null };
+  return nm ? { name: nm, lat: null, lng: null, mapsUrl: (L && L.url) || (st && st.mapsUrl) || null } : null;
+}
+function quoteCalc(q) {
+  const s = settings();
+  const pick = q.pickup || placeFrom(q.pickName, q.pickLoc), drop = q.drop || placeFrom(q.dropName, q.dropLoc);
+  const r = pick && drop ? Object.values(S.d.routes).find(x => num(x.standardKm) && placeKey(x.origin) === placeKey(pick.name) && placeKey(x.destination) === placeKey(drop.name)) : null;
+  let kmAuto = null, kmSrc = '';
+  if (r) { kmAuto = num(r.standardKm); kmSrc = `Standard KM เส้นทาง ${r.name}`; }
+  else if (pick && drop && pick.lat !== null && drop.lat !== null) { kmAuto = Math.round(haversine(pick, drop) / 1000 * s.roadFactor); kmSrc = `ระยะจากพิกัด × ${s.roadFactor}`; }
+  const km = num(q.km) ?? kmAuto;
+  const totalKm = km === null ? null : km * (q.emptyReturn ? 2 : 1);
+  const rate = num(s.fuelStd[q.vtype]);
+  const liters = totalKm && rate ? Math.ceil(totalKm / rate) : null;
+  const fuelPrice = num(q.fuelPrice) ?? s.fuelPrice;
+  const fuelCost = liters !== null ? liters * fuelPrice : null;
+  const cost = sum([fuelCost, num(q.toll), num(q.allowance), num(q.other)]);
+  const margin = num(q.marginPct) ?? s.quoteMarginPct;
+  const suggested = cost ? Math.ceil(cost * (1 + margin / 100) / 100) * 100 : null;
+  const price = num(q.price) ?? suggested;
+  return { pick, drop, kmAuto, kmSrc, km, totalKm, rate, liters, fuelPrice, fuelCost, cost, margin, suggested, price, profit: price !== null ? price - cost : null };
+}
+function quoteBreak(c, q) {
+  if (c.km === null) return '<span class="muted">ใส่ระยะทาง หรือวางพิกัดจุดรับ-ส่ง ระบบคำนวณให้</span>';
+  return `<div class="kv">
+    <div><span>ระยะทาง</span><b>${fmt(c.km)} กม.</b><em>${(q.kmManual !== undefined ? q.kmManual : num(q.km) !== null) ? 'กรอกเอง' : esc(c.kmSrc)}${q.emptyReturn ? ` · คิดวิ่งเปล่ากลับ รวม ${fmt(c.totalKm)} กม.` : ''}</em></div>
+    <div><span>น้ำมัน</span><b>${c.liters === null ? '–' : fmt(c.liters) + ' ลิตร'}</b><em>÷ ${fmt(c.rate, 1)} กม./ลิตร × ${money(c.fuelPrice)} = ${money(c.fuelCost)}</em></div>
+    <div><span>ต้นทุนรวม</span><b>${money(c.cost)}</b><em>น้ำมัน + ทางด่วน ${money(num(q.toll))} + เบี้ยเลี้ยง ${money(num(q.allowance))} + อื่นๆ ${money(num(q.other))}</em></div>
+    <div><span>ราคาแนะนำ</span><b>${money(c.suggested)}</b><em>บวกกำไร ${fmt(c.margin)}% ปัดขึ้นหลักร้อย</em></div>
+    <div><span>ราคาเสนอ</span><b>${money(c.price)}</b><em>${num(q.price) !== null && c.price !== c.suggested ? 'กำหนดเอง' : 'ตามราคาแนะนำ'}</em></div>
+    <div><span>กำไร</span><b>${c.profit === null ? '–' : money(c.profit)}</b><em>${c.profit !== null && c.price ? `${fmt(c.profit / c.price * 100)}% ของราคา` : ''}</em></div>
+  </div>`;
+}
+function quotePreview() {
+  const form = $('#sheet form'); const out = $('#q-preview'); if (!form || !out) return;
+  const fd = Object.fromEntries(new FormData(form).entries()); fd.emptyReturn = fd.emptyReturn === 'on';
+  const c = quoteCalc(fd);
+  const pin = (pl, id, txt) => { const el = $(id); if (!el) return; el.innerHTML = String(txt || '').trim() && parseLoc(txt) === undefined ? chip('crit', 'อ่านพิกัดไม่ได้ วางตัวเลขจาก Google Maps เช่น 9.1201, 99.3307', 'pin') : !pl ? '' : pl.lat !== null ? chip('good', `มีพิกัด ${placeText(thPlace(pl.lat, pl.lng) || {})}`, 'pin') : chip('warn', 'ยังไม่มีพิกัด (คำนวณระยะไม่ได้)', 'pin'); };
+  pin(c.pick, '#q-pick-pin', fd.pickLoc); pin(c.drop, '#q-drop-pin', fd.dropLoc);
+  out.innerHTML = quoteBreak(c, fd);
+}
+function openQuote(id) {
+  const q = id ? S.d.quotes[id] : null; const s = settings();
+  const v = (k, d = '') => (q && q[k] !== undefined && q[k] !== null ? q[k] : d);
+  const names = Object.values(S.d.sites).map(x => x.name).sort((a, b) => a.localeCompare(b, 'th'));
+  const ll = pl => (pl && pl.lat !== null && pl.lat !== undefined && !pl.siteId ? `${pl.lat}, ${pl.lng}` : (pl && pl.mapsUrl && !pl.siteId) || '');
+  openSheet({ title: q ? 'แก้ไขใบเสนอราคา ' + q.no : 'ใบเสนอราคางานเหมา', submit: 'บันทึกใบเสนอราคา', onSubmit: fd => saveQuote(fd, q),
+    body: `<div class="stack" data-qform>
+      <datalist id="site-names">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>
+      <div class="grid2">
+        ${fieldHtml({ k: 'customer', label: 'ลูกค้า', req: true }, v('customer'))}
+        ${fieldHtml({ k: 'phone', label: 'ผู้ติดต่อ / เบอร์โทร' }, v('phone'))}
+        <div class="field"><label class="req" for="f-pickName">จุดรับสินค้า (ลูกค้ากำหนด)</label><input id="f-pickName" name="pickName" list="site-names" value="${esc(q && q.pickup ? q.pickup.name : '')}" placeholder="ชื่อสถานที่"><span id="q-pick-pin"></span></div>
+        <div class="field"><label for="f-pickLoc">พิกัด / ลิงก์ Google Maps จุดรับ</label><input id="f-pickLoc" name="pickLoc" inputmode="url" value="${esc(ll(q && q.pickup))}" placeholder="เว้นว่างถ้าเป็นสถานที่ในระบบ"></div>
+        <div class="field"><label class="req" for="f-dropName">จุดส่งสินค้า (ลูกค้ากำหนด)</label><input id="f-dropName" name="dropName" list="site-names" value="${esc(q && q.drop ? q.drop.name : '')}" placeholder="ชื่อสถานที่"><span id="q-drop-pin"></span></div>
+        <div class="field"><label for="f-dropLoc">พิกัด / ลิงก์ Google Maps จุดส่ง</label><input id="f-dropLoc" name="dropLoc" inputmode="url" value="${esc(ll(q && q.drop))}" placeholder="เช่น 9.1382, 99.3215"></div>
+        ${fieldHtml({ k: 'date', label: 'วันที่ใช้รถ (โหลด)', type: 'date' }, v('date', addDays(dayKey(), 1)))}
+        ${fieldHtml({ k: 'arriveAt', label: 'ต้องถึงปลายทาง (วันเวลา)', type: 'datetime' }, v('arriveAt'))}
+        ${fieldHtml({ k: 'line', label: 'สาย', type: 'select', opts: [['south', 'สายใต้'], ['north', 'สายเหนือ'], ['east', 'ภาคตะวันออก']] }, v('line', 'south'))}
+        ${fieldHtml({ k: 'vtype', label: 'ประเภทรถ', type: 'select', opts: VTYPES.map(t => [t, t + ' ล้อ']) }, v('vtype', '18'))}
+        ${fieldHtml({ k: 'cargo', label: 'สินค้า' }, v('cargo'))}
+        ${fieldHtml({ k: 'weightKg', label: 'น้ำหนักประมาณ (กก.)', type: 'number' }, v('weightKg'))}
+        ${fieldHtml({ k: 'km', label: 'ระยะทางเที่ยวไป (กม.)', type: 'number', hint: 'เว้นว่าง = คำนวณจาก Standard KM หรือพิกัด' }, q && q.kmManual ? q.km : '')}
+        <div class="field"><span class="lbl">วิ่งเปล่ากลับ</span><label class="rowflex small"><input type="checkbox" name="emptyReturn" ${q ? (q.emptyReturn ? 'checked' : '') : 'checked'}> คิดค่าน้ำมันขากลับรถเปล่าด้วย</label></div>
+        ${fieldHtml({ k: 'toll', label: 'ค่าทางด่วน (บาท)', type: 'number' }, v('toll'))}
+        ${fieldHtml({ k: 'allowance', label: 'เบี้ยเลี้ยงคนขับ (บาท)', type: 'number' }, v('allowance'))}
+        ${fieldHtml({ k: 'other', label: 'ค่าใช้จ่ายอื่น (บาท)', type: 'number', hint: 'เช่น ค่าขึ้นลงสินค้า ค่าผ่านด่าน' }, v('other'))}
+        ${fieldHtml({ k: 'marginPct', label: 'กำไรที่บวก (%)', type: 'number' }, v('marginPct', s.quoteMarginPct))}
+        ${fieldHtml({ k: 'price', label: 'ราคาเสนอ (บาท)', type: 'number', hint: 'เว้นว่าง = ใช้ราคาแนะนำ' }, v('price') === v('suggested') ? '' : v('price'))}
+        ${fieldHtml({ k: 'note', label: 'หมายเหตุ / เงื่อนไข', type: 'textarea' }, v('note'))}
+      </div>
+      <div id="q-preview" class="card pad"></div>
+      <p class="small muted">ราคาน้ำมัน ${money(s.fuelPrice)}/ลิตร และกำไร ${fmt(s.quoteMarginPct)}% เป็นค่าร่าง แก้ได้ที่ ค่าตั้งค่า</p>
+    </div>` });
+  setTimeout(quotePreview, 40);
+}
+async function saveQuote(fd, cur) {
+  const errs = [];
+  if (!String(fd.customer || '').trim()) errs.push('ลูกค้า'); if (!String(fd.pickName || '').trim()) errs.push('จุดรับ'); if (!String(fd.dropName || '').trim()) errs.push('จุดส่ง');
+  if (errs.length) return 'กรอกให้ครบ: ' + errs.join(' · ');
+  for (const k of ['weightKg', 'km', 'toll', 'allowance', 'other', 'marginPct', 'price']) if (fd[k] && num(fd[k]) === null) return 'ช่องตัวเลขกรอกไม่ถูกต้อง';
+  if ((fd.pickLoc && parseLoc(fd.pickLoc) === undefined) || (fd.dropLoc && parseLoc(fd.dropLoc) === undefined)) return 'อ่านพิกัดไม่ได้ วางเป็นตัวเลข เช่น 9.1382, 99.3215 หรือลิงก์ Google Maps';
+  const q = { ...fd, emptyReturn: fd.emptyReturn === 'on' };
+  const c = quoteCalc(q);
+  if (c.price === null) return 'ใส่ระยะทาง (หรือพิกัดจุดรับ-ส่ง) หรือใส่ราคาเสนอเอง';
+  const now = new Date().toISOString(); const day = dayKey();
+  const seq = Object.values(S.d.quotes).filter(x => x.day === day).length + 1;
+  const rec = { ...(cur || {}), customer: fd.customer.trim(), phone: String(fd.phone || '').trim(), pickup: c.pick, drop: c.drop, date: fd.date || '', arriveAt: fd.arriveAt || null, line: fd.line || 'south', vtype: fd.vtype || '18', cargo: String(fd.cargo || '').trim(), weightKg: num(fd.weightKg), km: c.km, kmAuto: c.kmAuto, kmSrc: c.kmSrc, emptyReturn: q.emptyReturn, toll: num(fd.toll), allowance: num(fd.allowance), other: num(fd.other), marginPct: c.margin, fuelPrice: c.fuelPrice, rate: c.rate, liters: c.liters, fuelCost: c.fuelCost, cost: c.cost, suggested: c.suggested, price: c.price, note: String(fd.note || '').trim(), updatedAt: now };
+  if (num(fd.km) === null) rec.km = c.km; rec.kmManual = num(fd.km) !== null;
+  if (!cur) Object.assign(rec, { no: `Q${day.slice(2, 4)}${day.slice(5, 7)}${day.slice(8, 10)}-${pad(seq)}`, day, status: 'draft', createdAt: now, by: S.uid || null });
+  const id = cur ? cur.id : uid();
+  try { await put('quotes', id, rec); } catch { return 'บันทึกไม่สำเร็จ'; }
+  toast(`บันทึกใบเสนอราคา ${rec.no} แล้ว`); location.hash = '#quote-' + id;
+}
+function quoteText(q) {
+  return [`ใบเสนอราคา ${q.no} · ${COMPANY}`, `ลูกค้า: ${q.customer}${q.phone ? ' (' + q.phone + ')' : ''}`, `งานเหมา: รับที่ ${q.pickup ? q.pickup.name : '-'} → ส่งที่ ${q.drop ? q.drop.name : '-'}`,
+    `วันที่ใช้รถ: ${q.date ? thDate(q.date) : 'ตามนัด'}${q.arriveAt ? ' · ถึงปลายทาง ' + dtText(q.arriveAt) : ''}`, `รถ ${q.vtype} ล้อ${q.cargo ? ' · สินค้า ' + q.cargo : ''}${num(q.weightKg) ? ' ประมาณ ' + fmt(num(q.weightKg)) + ' กก.' : ''}`,
+    `ระยะทางประมาณ ${fmt(num(q.km))} กม.`, `ราคาเหมาเที่ยวนี้ ${money(num(q.price))} (รวมค่าน้ำมัน ค่าทางด่วน และคนขับ)`, q.note ? `หมายเหตุ: ${q.note}` : '', 'ยืนราคา 7 วัน'].filter(Boolean).join('\n');
+}
+function quoteCanvas(q) {
+  const W = 1240, H = 1754; const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d'); const F = '"IBM Plex Sans Thai","Noto Sans Thai",sans-serif';
+  g.fillStyle = '#fff'; g.fillRect(0, 0, W, H); g.fillStyle = '#111'; g.textBaseline = 'top';
+  const logo = $('.top .logo'); if (logo && logo.complete && logo.naturalWidth) { try { g.drawImage(logo, 90, 80, 120, 120 * logo.naturalHeight / logo.naturalWidth); } catch {} }
+  g.font = `700 40px ${F}`; g.fillText(COMPANY, 240, 92); g.font = `500 26px ${F}`; g.fillStyle = '#444'; g.fillText('ขนส่งสินค้าทั่วไป · รถ 10 / 18 / 22 ล้อ', 240, 146); g.fillStyle = '#111';
+  g.font = `700 52px ${F}`; g.textAlign = 'right'; g.fillText('ใบเสนอราคา', W - 90, 86); g.font = `500 26px ${F}`; g.fillText(`เลขที่ ${q.no}`, W - 90, 152); g.fillText(`วันที่ ${thDate(q.day || dayKey())}`, W - 90, 188); g.textAlign = 'left';
+  g.fillRect(90, 240, W - 180, 3);
+  let y = 276; const line = (lab, val, bold) => { g.font = `500 28px ${F}`; g.fillStyle = '#555'; g.fillText(lab, 90, y); g.fillStyle = '#111'; g.font = `${bold ? 700 : 500} 30px ${F}`; String(val).match(/.{1,48}/g).forEach((part, i) => g.fillText(part, 380, y + i * 40)); y += 40 * Math.max(1, Math.ceil(String(val).length / 48)) + 18; };
+  line('เรียน', `${q.customer}${q.phone ? '  ' + q.phone : ''}`, true);
+  line('งาน', 'งานเหมาขนส่งตามจุดที่ลูกค้ากำหนด');
+  line('จุดรับสินค้า', q.pickup ? q.pickup.name : '-');
+  line('จุดส่งสินค้า', q.drop ? q.drop.name : '-');
+  line('วันที่ใช้รถ', `${q.date ? thDate(q.date) : 'ตามนัดหมาย'}${q.arriveAt ? '  ·  ถึงปลายทาง ' + dtText(q.arriveAt) : ''}`);
+  line('ประเภทรถ', `${q.vtype} ล้อ${q.cargo ? '  ·  สินค้า ' + q.cargo : ''}${num(q.weightKg) ? '  ประมาณ ' + fmt(num(q.weightKg)) + ' กก.' : ''}`);
+  line('ระยะทางประมาณ', `${fmt(num(q.km))} กม.`);
+  y += 20; g.strokeStyle = '#111'; g.lineWidth = 3; g.strokeRect(90, y, W - 180, 150);
+  g.font = `600 32px ${F}`; g.fillText('ราคาเหมาเที่ยวนี้', 120, y + 30); g.font = `500 24px ${F}`; g.fillStyle = '#555'; g.fillText('รวมค่าน้ำมัน ค่าทางด่วน และคนขับ', 120, y + 86); g.fillStyle = '#111';
+  g.font = `700 64px ${F}`; g.textAlign = 'right'; g.fillText(money(num(q.price)), W - 120, y + 40); g.textAlign = 'left'; y += 200;
+  if (q.note) line('หมายเหตุ', q.note);
+  line('เงื่อนไข', 'ยืนราคา 7 วันนับจากวันที่ในใบเสนอราคา');
+  g.font = `500 26px ${F}`; [['ผู้เสนอราคา', 160], ['ผู้อนุมัติ / ลูกค้า', 760]].forEach(([lab, x]) => { g.fillRect(x, H - 300, 320, 2); g.textAlign = 'center'; g.fillText(lab, x + 160, H - 284); g.fillText('วันที่ ........../........../..........', x + 160, H - 240); g.textAlign = 'left'; });
+  return cv;
+}
+async function quotePdf(q) {
+  try {
+    if (!window.jspdf) await loadScript(JSPDF_URL);
+    try { await document.fonts.ready; } catch {}
+    const doc = new window.jspdf.jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    doc.addImage(quoteCanvas(q).toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 210, 297);
+    await saveFile(`ใบเสนอราคา-${q.no}.pdf`, doc.output('blob'));
+  } catch (e) { console.error(e); toast('สร้างไฟล์ใบเสนอราคาไม่สำเร็จ ลองใหม่อีกครั้ง'); }
+}
+async function quoteToOrder(q) {
+  const now = new Date().toISOString(); const oid = uid();
+  for (const [pl, kind] of [[q.pickup, 'origin'], [q.drop, 'destination']]) {
+    if (pl && pl.lat !== null && pl.lat !== undefined && !siteFor(pl.name)) await put('sites', uid(), { name: pl.name, kind, line: q.line || null, aliases: '', lat: pl.lat, lng: pl.lng, mapsUrl: pl.mapsUrl || '', radiusM: null, note: `จากใบเสนอราคา ${q.no}` });
+  }
+  await put('orders', oid, { date: q.date || addDays(dayKey(), 1), dueDate: q.arriveAt ? dayKey(new Date(q.arriveAt)) : '', unloadAt: q.arriveAt || null, customer: q.customer, kind: 'CHARTER', line: q.line || null, ref: q.no, origin: q.pickup ? q.pickup.name : '', destination: q.drop ? q.drop.name : '', reqType: q.vtype, weightKg: num(q.weightKg), revenue: num(q.price), note: [q.cargo, q.phone].filter(Boolean).join(' · '), status: 'open', source: 'quote', quoteId: q.id, createdAt: now });
+  await patch('quotes', q.id, { status: 'won', orderId: oid, wonAt: now });
+  toast('สร้างออเดอร์งานเหมาแล้ว ไปจัดรถต่อได้');
+}
+PAGES.quotes = () => {
+  const Q = ui.quotes; const all = Object.values(S.d.quotes).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const pick = { open: x => x.status === 'draft' || x.status === 'sent', won: x => x.status === 'won', lost: x => x.status === 'lost', all: () => true };
+  const list = all.filter(pick[Q.status] || pick.all);
+  return `
+  <div class="sec-h">${seg('quoteStatusTab', Q.status, [['open', 'รอลูกค้าตอบ', all.filter(pick.open).length], ['won', 'ได้งาน', all.filter(pick.won).length], ['lost', 'ไม่ได้งาน', all.filter(pick.lost).length], ['all', 'ทั้งหมด']])}
+    <button class="btn primary" data-act="quoteNew" ${dis()}>${icon('plus')}สร้างใบเสนอราคา</button></div>
+  <div class="note small">งานเหมา (ไม่ใช่งานประจำ เช่น สายใต้): ลูกค้ากำหนดจุดรับและจุดส่ง ระบบคำนวณระยะทาง ค่าน้ำมัน ต้นทุน และราคาแนะนำ ส่งราคาให้ลูกค้าเป็นข้อความหรือ PDF ลูกค้าตกลงแล้วกดสร้างออเดอร์ไปจัดรถ</div>
+  <div class="list">${list.length ? list.map(q => `<a class="row" href="#quote-${esc(q.id)}" style="text-decoration:none;color:inherit"><div class="main">
+    <div class="l1"><b class="mono">${esc(q.no)}</b> ${statusChip(QUOTE_STATUS, q.status)} <b>${esc(q.customer)}</b></div>
+    <div class="meta">${esc(q.pickup ? q.pickup.name : '-')} → <b>${esc(q.drop ? q.drop.name : '-')}</b></div>
+    <div class="small meta num">${q.date ? thDate(q.date) + ' · ' : ''}รถ ${esc(q.vtype)} ล้อ · ${fmt(num(q.km))} กม. · <b>${money(num(q.price))}</b> · ต้นทุน ${money(num(q.cost))}</div>
+  </div></a>`).join('') : empty('ยังไม่มีใบเสนอราคา', 'กด "สร้างใบเสนอราคา" ใส่จุดรับ-จุดส่งที่ลูกค้ากำหนด')}</div>`;
+};
+PAGES.quote = id => {
+  const q = S.d.quotes[id];
+  if (!q) return `<a class="btn ghost" href="#quotes">${icon('back')}งานเหมาทั้งหมด</a><div class="card">${empty('ไม่พบใบเสนอราคานี้', '')}</div>`;
+  const c = { km: num(q.km), kmSrc: q.kmSrc || '', totalKm: num(q.km) === null ? null : num(q.km) * (q.emptyReturn ? 2 : 1), rate: q.rate, liters: q.liters, fuelPrice: q.fuelPrice, fuelCost: q.fuelCost, cost: q.cost, margin: q.marginPct, suggested: q.suggested, price: num(q.price), profit: num(q.price) !== null ? num(q.price) - (q.cost || 0) : null }; // as quoted
+  const o = q.orderId && S.d.orders[q.orderId]; const t = o && o.tripId && S.d.trips[o.tripId];
+  const pl = (x, lab) => x ? `<div class="stack" style="gap:2px"><span class="small muted">${lab}</span><b>${esc(x.name)}</b>${x.lat !== null && x.lat !== undefined ? `<span class="small meta">${esc(placeText(thPlace(x.lat, x.lng) || {}))}</span>` : '<span class="small muted">ไม่มีพิกัด</span>'}${mapLinks({ ...x, name: x.name })}</div>` : '';
+  const msg = quoteText(q);
+  return `
+  <a class="btn ghost" href="#quotes" style="align-self:flex-start">${icon('back')}งานเหมาทั้งหมด</a>
+  <div class="card pad stack">
+    <div class="l1"><h2 class="mono">${esc(q.no)}</h2> ${statusChip(QUOTE_STATUS, q.status)}</div>
+    <div class="l1"><b>${esc(q.customer)}</b> ${q.phone ? `<span class="meta">${esc(q.phone)}</span>` : ''}</div>
+    <div class="grid2">${pl(q.pickup, 'จุดรับสินค้า')}${pl(q.drop, 'จุดส่งสินค้า')}</div>
+    <div class="small meta">${q.date ? 'ใช้รถ ' + thDate(q.date) + ' · ' : ''}${q.arriveAt ? 'ถึงปลายทาง ' + dtText(q.arriveAt) + ' · ' : ''}รถ ${esc(q.vtype)} ล้อ${q.cargo ? ' · ' + esc(q.cargo) : ''}${num(q.weightKg) ? ' · ' + fmt(num(q.weightKg)) + ' กก.' : ''} · ${esc((LINES[q.line] || {}).name || '')}</div>
+    ${q.note ? `<p class="small muted">${esc(q.note)}</p>` : ''}
+  </div>
+  <section class="sec"><h2>ต้นทุนและราคา (ภายใน)</h2>${quoteBreak(c, q)}</section>
+  <section class="sec"><h2>ข้อความส่งลูกค้า</h2><pre class="note small" style="white-space:pre-wrap;margin:0;font-family:var(--f-body)">${esc(msg)}</pre>
+    <div class="rowflex"><button class="btn" data-act="copyText" data-v="${esc(msg)}">${icon('copy')}คัดลอกข้อความ</button><button class="btn" data-act="quotePdf" data-id="${esc(q.id)}">${icon('download')}ดาวน์โหลด PDF</button><button class="btn ghost" data-act="quoteEdit" data-id="${esc(q.id)}" ${dis()}>แก้ไข</button></div></section>
+  <section class="card pad stack"><h2>ผลการเสนอราคา</h2>
+    ${o ? `<div class="note good small">สร้างออเดอร์แล้ว · ${statusChip(ORDER_STATUS, o.status)} ${t ? `<a href="#trip-${esc(t.id)}">ทริป ${esc(t.no)}</a>` : o.status === 'open' ? '<a href="#dispatch">ไปจัดรถ</a>' : ''}</div>` : `<div class="rowflex">${q.status === 'draft' ? `<button class="btn" data-act="quoteStatus" data-id="${esc(q.id)}" data-v="sent" ${dis()}>ส่งให้ลูกค้าแล้ว</button>` : ''}<button class="btn primary" data-act="quoteWin" data-id="${esc(q.id)}" ${dis()}>${icon('check')}ลูกค้าตกลง สร้างออเดอร์</button>${q.status !== 'lost' ? `<button class="btn danger" data-act="quoteStatus" data-id="${esc(q.id)}" data-v="lost" ${dis()}>ไม่ได้งาน</button>` : ''}</div>`}
+  </section>`;
+};
+
+/* ---------- cashier at the counter: scan the label, take the shipping fee, give change ---------- */
+const parcelDue = p => (p.payer !== 'cod' && p.status !== 'cancel' && !p.paid ? num(p.fee) || 0 : 0);
+function cashTotals() { const ps = ui.cash.cart.map(id => S.d.parcels[id]).filter(Boolean); return { ps, due: sum(ps.map(parcelDue)), cod: sum(ps.filter(p => p.payer === 'cod').map(p => num(p.fee))) }; }
+function changeHtml() {
+  const c = ui.cash; const { due } = cashTotals(); const got = num(c.cash);
+  if (!due) return '<span class="muted">ยังไม่มียอดที่ต้องเก็บ</span>';
+  if (c.method === 'transfer') return `<span>รับโอน <b>${money(due)}</b> (ไม่มีเงินทอน)</span>`;
+  if (got === null) return '<span class="muted">กรอกเงินที่รับมา ระบบคิดเงินทอนให้</span>';
+  if (got < due) return `<span class="chip crit">${icon('x')}ยังขาด ${money(due - got)}</span>`;
+  return `<span class="change">เงินทอน <b>${money(got - due)}</b></span>`;
+}
+function updateChange() { const el = $('#cash-change'); if (el) el.innerHTML = changeHtml(); }
+function cashAdd(p) {
+  if (!p) return 'ไม่พบเลขพัสดุนี้';
+  if (p.status === 'cancel') return `พัสดุ ${p.no} ถูกยกเลิกแล้ว`;
+  if (ui.cash.cart.includes(p.id)) return `${p.no} อยู่ในรายการแล้ว`;
+  ui.cash.cart.push(p.id); ui.cash.last = null; return '';
+}
+PAGES.cashier = () => {
+  const c = ui.cash; c.cart = c.cart.filter(id => S.d.parcels[id]);
+  const { ps, due, cod } = cashTotals(); const today = dayKey();
+  const all = Object.values(S.d.parcels).filter(p => p.status !== 'cancel');
+  const paidToday = all.filter(p => p.paid && dayKey(new Date(p.paid.at)) === today);
+  const unpaid = all.filter(p => p.day === today && p.payer !== 'cod' && !p.paid && !c.cart.includes(p.id)).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const byM = m => sum(paidToday.filter(p => p.paid.method === m).map(p => num(p.paid.amount)));
+  return `
+  ${c.last ? `<div class="card pad stack paidbox"><span class="small muted">รับชำระแล้ว ${c.last.n} บิล · ${thTime(c.last.at)}</span><div class="rowflex" style="justify-content:space-between"><span>ยอด <b>${money(c.last.total)}</b>${c.last.method === 'cash' ? ` · รับ ${money(c.last.cash)}` : ' · โอน'}</span>${c.last.method === 'cash' ? `<span class="change">ทอน <b>${money(c.last.change)}</b></span>` : ''}</div></div>` : ''}
+  <div class="card pad scanbox">
+    <form data-form="cashScan" novalidate class="stack">
+      <label class="lbl" for="cash-in">ยิงลาเบลพัสดุ หรือพิมพ์เลขพัสดุแล้วกด Enter</label>
+      <input id="cash-in" class="scan" data-bind="cash.code" value="${esc(c.code)}" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="S2610140001-01">
+      ${c.err ? `<div class="errbox" role="alert">${esc(c.err)}</div>` : ''}
+    </form>
+  </div>
+  <section class="sec"><div class="sec-h"><h2>รายการที่จะเก็บเงิน</h2>${ps.length ? `<button class="btn sm ghost" data-act="cashClear">ล้างรายการ</button>` : ''}</div>
+    <div class="list">${ps.length ? ps.map(p => `<div class="row" style="align-items:center"><div class="main"><div class="l1"><span class="trk">${esc(p.no)}</span> <span class="meta">${esc(p.receiverName || '')} · ${esc(p.province || '')} · ${fmt(num(p.boxes))} กล่อง</span></div><div class="l1 small">${p.paid ? chip('good', 'ชำระแล้ว ' + thTime(p.paid.at)) : p.payer === 'cod' ? chip('', `เก็บปลายทาง ${money(num(p.fee))} (ไม่เก็บตอนนี้)`) : `<b>${money(num(p.fee))}</b>`}</div></div><button class="btn sm ghost" data-act="cashRemove" data-id="${esc(p.id)}" aria-label="เอาออก">${icon('x')}</button></div>`).join('') : empty('ยังไม่มีรายการ', 'ยิงลาเบลที่ติดกล่อง หรือเลือกจากบิลที่ยังไม่ชำระด้านล่าง')}</div>
+  </section>
+  <section class="card pad stack">
+    <div class="rowflex" style="justify-content:space-between"><span class="meta">ยอดที่ต้องเก็บ</span><span class="cashtotal">${money(due)}</span></div>
+    ${cod ? `<p class="small muted">มีพัสดุเก็บค่าส่งปลายทาง ${money(cod)} ไม่รวมในยอดนี้</p>` : ''}
+    ${seg('cashMethod', c.method, [['cash', 'เงินสด'], ['transfer', 'โอน / QR']])}
+    ${c.method === 'cash' ? `<div class="field"><label for="cash-recv">รับเงินมา (บาท)</label><input id="cash-recv" inputmode="decimal" data-bind="cash.cash" value="${esc(c.cash)}" placeholder="0"></div>
+    <div class="rowflex">${[['exact', 'พอดี'], ['100', '+100'], ['500', '+500'], ['1000', '+1,000']].map(([v, l]) => `<button class="btn sm" data-act="cashQuick" data-v="${v}">${l}</button>`).join('')}</div>` : ''}
+    <div id="cash-change" class="cashchange">${changeHtml()}</div>
+    <button class="btn primary big" data-act="cashPay" ${dis()} ${due ? '' : 'disabled'}>${icon('cash')}รับชำระเงิน</button>
+  </section>
+  ${unpaid.length ? `<section class="sec"><div class="sec-h"><h2>รับวันนี้ ยังไม่ชำระ</h2><span class="sub">${unpaid.length} บิล · ${money(sum(unpaid.map(parcelDue)))}</span></div><div class="list">${unpaid.map(p => `<div class="row" style="align-items:center"><div class="main"><div class="l1"><span class="trk">${esc(p.no)}</span> <span class="meta">${esc(p.senderName || '')} → ${esc(p.receiverName || '')}</span></div><div class="small meta">${esc(p.province || '')} · ${money(num(p.fee))}</div></div><button class="btn sm" data-act="cashAddId" data-id="${esc(p.id)}">${icon('plus')}เพิ่ม</button></div>`).join('')}</div></section>` : ''}
+  <section class="sec"><h2>สรุปวันนี้</h2>
+    <div class="kv"><div><span>รับชำระแล้ว</span><b>${money(sum(paidToday.map(p => num(p.paid.amount))))}</b><em>${paidToday.length} บิล</em></div><div><span>เงินสด</span><b>${money(byM('cash'))}</b><em>ต้องมีในลิ้นชัก</em></div><div><span>โอน / QR</span><b>${money(byM('transfer'))}</b><em>ตรวจยอดเข้าบัญชี</em></div><div><span>เก็บปลายทาง (รับวันนี้)</span><b>${money(sum(all.filter(p => p.day === today && p.payer === 'cod').map(p => num(p.fee))))}</b><em>สาขาปลายทางเก็บ</em></div></div>
+  </section>`;
+};
 
 /* ---------- scan station ---------- */
 PAGES.scan = () => {
@@ -1711,6 +2198,8 @@ PAGES.dispatch = () => {
   <section class="sec">
     <div class="sec-h"><h2>1 · เลือกออเดอร์ที่จะรวมเป็น Load</h2><span class="sub">หลาย Order → หลาย Bill → 1 Load → 1 Trip</span></div>
     <p class="small muted">ผู้รับผิดชอบตามเอกสาร: นมเหมาคัน / Front Haul นครสวรรค์ คุณอนุสรณ์ · Backhaul และสายใต้ คุณไปว่าน</p>
+    ${p.line !== 'north' ? (() => { const c3 = atSai3().filter(x => x.st === 'crit'); return c3.length ? `<div class="note crit small">งานสัญญายังอยู่คลังสาย 3 ต้องโหลดวันนี้ ${c3.length} รายการ (ให้ถึงลูกค้าตามกำหนด): ${esc(c3.slice(0, 4).map(x => x.name).join(', '))}${c3.length > 4 ? ' …' : ''}</div>` : ''; })() : ''}
+    ${p.line === 'south' ? hubPanel() : ''}
     <div class="grid3">
       <div class="field"><label for="dp-kind">ประเภทงาน</label><select id="dp-kind" data-bind="dp.kind" data-rerender="all"><option value="all">ทั้งหมด</option>${ORDER_KINDS.map(k => `<option value="${k}" ${p.kind === k ? 'selected' : ''}>${KIND[k].label}</option>`).join('')}</select></div>
       <div class="field"><label for="dp-df">วันที่โหลด</label><input id="dp-df" type="date" data-bind="dp.dateFilter" data-rerender="all" value="${esc(p.dateFilter)}"></div>
@@ -1725,10 +2214,11 @@ PAGES.dispatch = () => {
     <h2>2 · เส้นทาง (ขาแรก) และวันออกรถ</h2>
     <div class="grid2">
       <div class="field"><label for="dp-route">เส้นทาง (Route)</label><select id="dp-route" data-bind="dp.routeId" data-rerender="all"><option value="">— ยังไม่ระบุ —</option>${routes.map(r => `<option value="${esc(r.id)}" ${p.routeId === r.id ? 'selected' : ''}>${esc(r.name)}${num(r.standardKm) ? ` · ${fmt(num(r.standardKm))} กม.` : ''}</option>`).join('')}</select>
-        <span class="hint">${route ? (num(route.standardKm) ? `Standard KM ขานี้ ${fmt(num(route.standardKm))} กม. ขากลับ/วิ่งเปล่าเพิ่มในทริปได้` : 'เส้นทางนี้ยังไม่มี Standard KM (รอ Route Master)') : 'ถ้ายังไม่มีเส้นทางตรง เลือกภายหลังได้ในทริป'}</span></div>
+        <span class="hint">${route ? (num(route.standardKm) ? `Standard KM ขานี้ ${fmt(num(route.standardKm))} กม. · น้ำมันที่ให้ ${chosen ? `${fmt(fuelGive(route.standardKm, chosen.v.type))} ลิตร (รถ ${esc(chosen.v.type)} ล้อ)` : esc(fuelText(route.standardKm))} · ขากลับ/วิ่งเปล่าเพิ่มในทริปได้` : 'เส้นทางนี้ยังไม่มี Standard KM (รอ Route Master)') : 'ถ้ายังไม่มีเส้นทางตรง เลือกภายหลังได้ในทริป'}</span></div>
       <div class="field"><label for="dp-date">วันออกรถ</label><input id="dp-date" type="date" data-bind="dp.date" data-rerender="all" value="${esc(p.date)}"></div>
       <div class="field"><label for="dp-lt">เวลาเข้าโหลด</label><input id="dp-lt" type="time" data-bind="dp.loadTime" data-rerender="all" value="${esc(loadTime)}"><span class="hint">${atTimeMatch(loadOrigin(load, route)) ? `โหลดที่ ${esc(settings().timeMatchAt)}: ใช้ดูว่ารถที่ลงของขากลับอยู่ทันไหม (เผื่อ ${fmt(settings().bufferHours)} ชม. หลังลงของ)` : `จับคู่เวลาลงของ → โหลด ใช้เฉพาะงานที่ ${esc(settings().timeMatchAt)}`}</span></div>
       ${(() => { const so = load.parcels.length > 0 || load.orders.some(o => orderLine(o) === 'south') || p.line === 'south' || (route && route.line === 'south'); if (!so) return ''; const ad = p.arriveDate || addDays(p.date, 1); return `<div class="field"><label for="dp-arr">ต้องถึงสาขาภาคใต้ก่อน ${esc(settings().southArriveBy)} น. วันที่</label><input id="dp-arr" type="date" data-bind="dp.arriveDate" data-rerender="all" value="${esc(ad)}"><span class="hint">ค่าเริ่มต้น = วันถัดจากวันออกรถ ใช้กับทุกสาขาในทริปนี้</span></div>`; })()}
+      ${(() => { const fh = load.orders.filter(o => o.kind === 'FH' || o.kind === 'CHARTER'); if (!fh.length) return ''; const miss = fh.filter(o => !o.unloadAt); return `<div class="field"><label class="${miss.length ? 'req' : ''}" for="dp-fha">ต้องถึงปลายทาง (วันเวลา)</label><input id="dp-fha" type="datetime-local" data-bind="dp.fhArrive" value="${esc(p.fhArrive || (miss.length ? '' : load.unloadAt))}"><span class="hint">${fh.map(o => `${esc(o.destination || '-')}: ${o.unloadAt ? dtText(o.unloadAt) : '<b>ยังไม่กำหนด</b>'}`).join(' · ')}${miss.length ? ' · งานเหมาคันต้องกำหนดเวลาถึงปลายทางก่อนปล่อยรถ' : ''}</span></div>`; })()}
     </div>
     ${dueNote(load, p.date)}
     ${(() => { const so = load.parcels.length > 0 || load.orders.some(o => orderLine(o) === 'south'); const ad = p.arriveDate || addDays(p.date, 1); return so && load.earliestDue && ad > load.earliestDue ? `<div class="note crit small">ถึงสาขาวันที่ ${thDate(ad)} หลังกำหนดส่งถึงลูกค้า ${thDate(load.earliestDue)} ของงานที่เลือก</div>` : ''; })()}
@@ -1740,11 +2230,12 @@ PAGES.dispatch = () => {
   </section>
 
   <section class="sec">
-    <h2>4 · คนขับและหาง</h2>
+    <h2>4 · คนขับและหาง (ต้องระบุก่อนปล่อยรถ)</h2>
     <div class="grid2">
-      <div class="field"><label for="dp-driver">คนขับ</label><select id="dp-driver" data-bind="dp.driverId"><option value="">— เลือกคนขับ —</option>${drivers.map(x => `<option value="${esc(x.id)}" ${p.driverId === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select><span class="hint">ระบบใส่คนขับจากการเช็คอินให้ เปลี่ยนได้ (คนขับสลับรถได้ ไม่ผูกถาวร)</span></div>
-      <div class="field"><label for="dp-trailer">ทะเบียนหางที่ใช้</label><input id="dp-trailer" data-bind="dp.trailerPlate" value="${esc(p.trailerPlate || (chosen && chosen.w && chosen.w.trailerPlate) || '')}" placeholder="${chosen && chosen.v.trailerPlate ? esc(chosen.v.trailerPlate) + ' (หางประจำ)' : 'หางประจำ'}"></div>
+      <div class="field"><label class="req" for="dp-driver">คนขับ</label><select id="dp-driver" data-bind="dp.driverId"><option value="">— เลือกคนขับ —</option>${drivers.map(x => `<option value="${esc(x.id)}" ${p.driverId === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select><span class="hint">ระบบใส่คนขับจากการเช็คอินให้ เปลี่ยนได้ (คนขับสลับรถได้ ไม่ผูกถาวร)</span></div>
+      <div class="field"><label class="${chosen && chosen.v.type !== '10' ? 'req' : ''}" for="dp-trailer">ทะเบียนหางที่ใช้</label><input id="dp-trailer" data-bind="dp.trailerPlate" data-rerender="debounce" value="${esc(p.trailerPlate || (chosen && chosen.w && chosen.w.trailerPlate) || '')}" placeholder="${chosen && chosen.v.trailerPlate ? esc(chosen.v.trailerPlate) + ' (หางประจำ)' : chosen && chosen.v.type === '10' ? 'รถ 10 ล้อ ไม่มีหาง' : 'หางประจำ'}"><span class="hint">${chosen && chosen.v.trailerPlate ? `หางประจำของ ${esc(chosen.v.plate)} คือ ${esc(chosen.v.trailerPlate)} เว้นว่าง = ใช้หางประจำ` : chosen && chosen.v.type !== '10' ? 'รถคันนี้ยังไม่มีหางประจำในระบบ ต้องกรอกทะเบียนหาง' : ''}</span></div>
     </div>
+    ${(() => { if (!chosen) return ''; const tp = String(p.trailerPlate || (chosen.w && chosen.w.trailerPlate) || '').trim(); if (!isSpare(chosen.v, tp)) return ''; return `<div class="note crit stack"><b>${icon('alert')} ใช้หางสำรอง ${esc(tp)} ไม่ใช่หางประจำ ${esc(chosen.v.trailerPlate)}</b><span class="small">ระบบจะแจ้งเตือนทันที และบันทึกประวัติหางสำรอง (เสี่ยงเรื่องซ่อมบำรุงและการดูแลยาง)</span><div class="field"><label class="req" for="dp-spr">เหตุผลที่ใช้หางสำรอง</label><input id="dp-spr" data-bind="dp.spareReason" value="${esc(p.spareReason)}" placeholder="เช่น หางประจำเข้าซ่อมช่วงล่าง"></div></div>`; })()}
   </section>
 
   <section class="sec">
@@ -1754,6 +2245,7 @@ PAGES.dispatch = () => {
         <div class="util">${chosen.ev.util.map(u => `<span>${u.label}</span>${meter(u.pct, u.state === 'crit' ? 'crit' : u.state === 'warn' ? 'warn' : '')}<span class="v">${u.pct === null ? 'ไม่มีข้อมูล' : `${fmt(u.val, 1)} / ${fmt(u.cap)} ${u.unit} (${fmt(u.pct * 100)}%)`}</span>`).join('')}</div>
         <div class="checks">${chosen.ev.checks.map(c => `<div class="check ${c.state}"><span class="ic">${icon(c.state === 'good' ? 'check' : c.state === 'crit' ? 'x' : c.state === 'warn' ? 'alert' : 'info')}</span><span class="t"><b>${esc(c.title)}</b><span>${esc(c.text)}</span></span><span class="v">${esc(c.val || '')}</span></div>`).join('')}</div>
         ${ev.over ? `<label class="rowflex note crit"><input type="checkbox" data-bind="dp.confirmOver" ${p.confirmOver ? 'checked' : ''}> ยืนยันว่าตรวจสอบแล้ว ปล่อยรถแม้เกินความจุที่บันทึกไว้</label>` : ''}
+        ${ev.partnerBad ? `<div class="note crit stack"><b>ปลายทาง ${esc(ev.partnerHubs.map(b => b.name).join(', '))} เป็นจังหวัด Partner ต้องใช้ทะเบียนรถของ Partner</b><span class="small">เลือกรถ Partner ในขั้นที่ 3 ถ้าจำเป็นต้องใช้รถบริษัทจริงให้ติ๊กยืนยันพร้อมเหตุผล</span><label class="rowflex"><input type="checkbox" data-bind="dp.partnerOk" ${p.partnerOk ? 'checked' : ''}> ยืนยันใช้รถบริษัทไปจังหวัด Partner</label><div class="field"><label for="dp-pr">เหตุผล</label><input id="dp-pr" data-bind="dp.partnerReason" value="${esc(p.partnerReason)}" placeholder="เช่น Partner ไม่มีรถว่าง"></div></div>` : ''}
         ${ev.below ? `<div class="note warn stack"><b>ต้องอนุมัติกรณีพิเศษ</b><span class="small">ยอดค่าบรรทุกยังไม่ถึงเกณฑ์ขั้นต่ำ แต่จำเป็นต้องปล่อยรถ (เอกสารข้อ 8)</span><div class="grid2"><div class="field"><label for="dp-ab">ผู้อนุมัติ</label><input id="dp-ab" data-bind="dp.approveBy" value="${esc(p.approveBy)}"></div><div class="field"><label for="dp-ar">เหตุผล</label><input id="dp-ar" data-bind="dp.approveReason" value="${esc(p.approveReason)}" placeholder="เช่น สินค้าค้าง ลูกค้าเร่ง"></div></div></div>` : ''}`
       : `<p class="meta">เลือกรถในขั้นที่ 3 ก่อน ระบบจะตรวจความจุ รายได้ขั้นต่ำ Maintenance และประเภทรถตาม Checker ให้</p>`}
       ${p.err ? `<div class="errbox" role="alert">${esc(p.err)}</div>` : ''}
@@ -1761,6 +2253,35 @@ PAGES.dispatch = () => {
     </div>
   </section>`;
 };
+/* south: one truck per hub province, combine hubs along the road when a truck is not full */
+function hubGroups() {
+  const g = {};
+  const grp = (b, nm) => { const k = b ? b.id : 'p:' + nm; return g[k] || (g[k] = { key: k, hub: b, name: b ? b.name : nm, idx: corridorIdx(b ? b.name + ' ' + (b.provinces || '') : nm), partner: isPartnerHub(b), orders: [], pkeys: [], weightKg: 0, pallets: 0, revenue: 0, n: 0, due: [] }); };
+  Object.values(S.d.orders).filter(o => o.status === 'open' && o.kind === 'SOUTH').forEach(o => { const nm = splitDest(o.destination)[0] || '-'; const r = grp(branchFor(nm), nm); r.orders.push(o.id); r.weightKg += num(o.weightKg) || 0; r.pallets += num(o.pallets) || 0; r.revenue += num(o.revenue) || 0; r.n++; r.due.push(o.dueDate); });
+  parcelGroups().forEach(pg => { const nm = pg.key.slice(2); const b = pg.key.startsWith('b:') ? S.d.sites[nm] : branchFor(nm); const r = grp(b, b ? b.name : nm); r.pkeys.push(pg.key); r.weightKg += pg.weightKg; r.revenue += pg.fee; r.n += pg.parcels.length; r.due.push(pg.earliestDue); });
+  const cap = num(settings().maxPayloadKg['18']) || 28000;
+  return Object.values(g).map(r => ({ ...r, fill: r.weightKg / cap, earliest: r.due.filter(Boolean).sort()[0] || null })).sort((a, b) => a.idx - b.idx || a.name.localeCompare(b.name, 'th'));
+}
+function hubCombos(hgs) {
+  const chain = hgs.filter(h => !h.partner && h.idx <= MAIN_CHAIN), out = [], used = new Set();
+  chain.forEach((h, i) => {
+    if (used.has(h.key) || h.fill >= 0.7) return;
+    const set = [h]; let fill = h.fill;
+    for (let j = i + 1; j < chain.length; j++) { if (used.has(chain[j].key) || fill + chain[j].fill > 1) break; set.push(chain[j]); fill += chain[j].fill; }
+    if (set.length > 1) { set.forEach(x => used.add(x.key)); out.push({ set, fill }); }
+  });
+  return out;
+}
+function hubPanel() {
+  const hgs = hubGroups(); if (!hgs.length) return '';
+  const combos = hubCombos(hgs);
+  const pct = f => fmt(f * 100) + '%';
+  return `<details class="more card pad" open><summary><b>รวมงานตามจังหวัด (ฮับสายใต้)</b></summary>
+    <p class="small muted" style="margin:4px 0 0">ปกติรถวิ่งจังหวัดเดียว ไม่เต็มคันควบจังหวัดถัดไปตามทาง · เทียบรถ 18 ล้อ ${tons(num(settings().maxPayloadKg['18']) || 28000)}</p>
+    <div class="list" style="margin-top:8px">${hgs.map(h => `<div class="row" style="align-items:center"><div class="main"><div class="l1"><b>${esc(h.name)}</b> ${h.partner ? chip('', 'Partner · ใช้รถ Partner') : ''} ${dueChip(h.earliest)}</div><div class="small meta num"><b>${pct(h.fill)}</b> ของคัน · ${fmt(h.weightKg)} กก.${h.pallets ? ' · ' + fmt(h.pallets) + ' พาเลท' : ''} · ${money(h.revenue)}</div>${meter(Math.min(1, h.fill), h.fill > 1 ? 'crit' : h.fill < 0.5 ? 'warn' : '')}<div class="small meta">${h.orders.length} ออเดอร์${h.pkeys.length ? ` + พัสดุ ${h.n - h.orders.length} บิล` : ''}${h.fill > 1 ? ' · เกิน 1 คัน แบ่ง 2 คัน' : ''}</div></div><button class="btn sm" data-act="dpHubs" data-v="${esc(h.key)}">เลือกงาน</button></div>`).join('')}</div>
+    ${combos.length ? `<div class="stack" style="gap:6px;margin-top:8px">${combos.map(c => `<div class="note good small rowflex" style="justify-content:space-between"><span><b>ควบ ${esc(c.set.map(h => h.name.replace(/^สาขา/, '')).join(' + '))}</b> = ${pct(c.fill)} ของรถ 18 ล้อ</span><button class="btn sm primary" data-act="dpHubs" data-v="${esc(c.set.map(h => h.key).join(','))}">เลือกชุดนี้</button></div>`).join('')}</div>` : ''}
+  </details>`;
+}
 function dueNote(load, date) {
   const due = load.earliestDue; if (!due || !date) return '';
   const hub = settings().hubDays;
@@ -1805,8 +2326,15 @@ async function createTrip() {
   const errs = [];
   if (!load.count) errs.push('เลือกออเดอร์หรือพัสดุอย่างน้อย 1 รายการ');
   if (!v) errs.push('เลือกรถ');
-  if (!p.driverId) errs.push('เลือกคนขับ');
+  if (!p.driverId) errs.push('เลือกคนขับ (ต้องมีชื่อคนขับทุกทริป)');
   if (!p.date) errs.push('ระบุวันออกรถ');
+  const w0 = v ? Object.values(d.checkins).filter(c => c.status === 'waiting' && c.vehicleId === v.id).sort(queueCmp)[0] : null;
+  const trailerNo = v ? (String(p.trailerPlate || '').trim() || (w0 && w0.trailerPlate) || v.trailerPlate || '') : '';
+  const spare = v && isSpare(v, trailerNo);
+  if (v && v.type !== '10' && !trailerNo) errs.push('ใส่ทะเบียนหาง (รถคันนี้ยังไม่มีหางประจำในระบบ)');
+  if (spare && !String(p.spareReason || '').trim()) errs.push(`ใส่เหตุผลที่ใช้หางสำรอง ${trailerNo}`);
+  const fhs = load.orders.filter(o => o.kind === 'FH' || o.kind === 'CHARTER');
+  if (fhs.some(o => !o.unloadAt) && !p.fhArrive) errs.push('กำหนดเวลาที่ต้องถึงปลายทาง (งานเหมาคัน)');
   let ev = null;
   const loadTime = p.loadTime || load.loadTime;
   const loadDT = p.date ? new Date(p.date + 'T' + (loadTime || '00:00')) : null;
@@ -1817,23 +2345,29 @@ async function createTrip() {
     if (ev.over && !p.confirmOver) errs.push('ติ๊กยืนยันกรณีเกินความจุ');
     if (ev.below && (!p.approveBy.trim() || !p.approveReason.trim())) errs.push('ใส่ชื่อผู้อนุมัติและเหตุผล (รายได้ต่ำกว่าเกณฑ์)');
     if (ev.checks.find(c => c.key === 'mt' && c.state === 'crit')) errs.push('รถคันนี้ไม่ผ่าน Maintenance Check เลือกคันอื่น หรือบันทึกเข้าศูนย์ก่อน');
+    if (ev.partnerBad && (!p.partnerOk || !String(p.partnerReason || '').trim())) errs.push('ปลายทางเป็นจังหวัด Partner ต้องใช้รถ Partner (หรือติ๊กยืนยันใช้รถบริษัทพร้อมเหตุผล)');
   }
+  if (p.fhArrive && loadDT && new Date(p.fhArrive) <= loadDT) errs.push('เวลาถึงปลายทางต้องหลังเวลาเข้าโหลด');
   if (p.arriveDate && p.date && p.arriveDate < p.date) errs.push('วันที่ถึงสาขาต้องไม่ก่อนวันออกรถ');
   if (errs.length) { p.err = errs.join(' · '); render({ force: true }); return; }
-  const w = Object.values(d.checkins).filter(c => c.status === 'waiting' && c.vehicleId === v.id).sort(queueCmp)[0] || null;
+  const w = w0 || null;
   const byKind = {};
   load.orders.forEach(o => { (byKind[o.kind || 'OTHER'] = byKind[o.kind || 'OTHER'] || []).push(o); });
   const jobs = Object.entries(byKind).map(([kind, os]) => {
     const t = loadTotals(os.map(o => o.id));
-    return { id: uid(), kind, routeId: route ? route.id : null, origin: uniq(os.map(o => o.origin)).join(' / '), destination: uniq(os.map(o => o.destination)).join(' → '), customers: uniq(os.map(o => o.customer)).join(', '), orderIds: os.map(o => o.id), revenue: t.revenue, weightKg: t.weightKg, volumeCbm: t.volumeCbm, pallets: t.pallets, bills: t.bills, dueDate: minDue(os), unloadAt: t.unloadAt || null };
+    const dests = uniq(os.map(o => o.destination)); if (kind === 'SOUTH') dests.sort(byCorridor);
+    const fixed = (kind === 'FH' || kind === 'CHARTER') && p.fhArrive && os.some(o => !o.unloadAt) ? p.fhArrive : null;
+    return { id: uid(), kind, routeId: route ? route.id : null, origin: uniq(os.map(o => o.origin)).join(' / '), destination: dests.join(' → '), customers: uniq(os.map(o => o.customer)).join(', '), orderIds: os.map(o => o.id), revenue: t.revenue, weightKg: t.weightKg, volumeCbm: t.volumeCbm, pallets: t.pallets, bills: t.bills, dueDate: minDue(os), unloadAt: [t.unloadAt, fixed].filter(Boolean).sort().pop() || null };
   });
-  if (load.parcels.length) jobs.push({ id: uid(), kind: 'SOUTH', parcel: true, routeId: route ? route.id : null, origin: 'คลังพุทธมณฑลสาย 3', destination: load.groups.map(g => g.name).join(' → '), customers: 'พัสดุรายบิล (ขนม / เบ็ดเตล็ด)', orderIds: [], revenue: null, weightKg: sum(load.parcels.map(x => num(x.weightKg))), bills: load.parcels.length, dueDate: minDue(load.parcels) });
+  if (load.parcels.length) jobs.push({ id: uid(), kind: 'SOUTH', parcel: true, routeId: route ? route.id : null, origin: 'คลังพุทธมณฑลสาย 3', destination: load.groups.map(g => g.name).sort(byCorridor).join(' → '), customers: 'พัสดุรายบิล (ขนม / เบ็ดเตล็ด)', orderIds: [], revenue: null, weightKg: sum(load.parcels.map(x => num(x.weightKg))), bills: load.parcels.length, dueDate: minDue(load.parcels) });
   const seq = Object.values(d.trips).filter(t => t.date === p.date).length + 1;
   const [yy, mm, dd] = p.date.split('-');
   const id = uid(); const now = new Date().toISOString();
   const line = p.line !== 'all' ? p.line : ((load.orders[0] && orderLine(load.orders[0])) || (load.parcels.length ? 'south' : null) || v.line || null);
   const trip = {
-    no: `T${yy.slice(2)}${mm}${dd}-${pad(seq)}`, date: p.date, loadAt: loadTime ? `${p.date}T${loadTime}` : null, line, vehicleId: v.id, driverId: p.driverId, trailerPlate: p.trailerPlate.trim() || (w && w.trailerPlate) || v.trailerPlate || null,
+    no: `T${yy.slice(2)}${mm}${dd}-${pad(seq)}`, date: p.date, loadAt: loadTime ? `${p.date}T${loadTime}` : null, line, vehicleId: v.id, driverId: p.driverId, trailerPlate: trailerNo || null,
+    spareTrailer: spare ? { plate: trailerNo, regular: v.trailerPlate, reason: String(p.spareReason).trim(), at: now } : null,
+    partnerOverride: ev.partnerBad ? { reason: String(p.partnerReason).trim(), hubs: ev.partnerHubs.map(b => b.name), at: now } : null,
     checkinId: w ? w.id : null, routeId: route ? route.id : null, status: 'planned', jobs, standardKm: route ? num(route.standardKm) : null,
     arriveDate: line === 'south' ? (p.arriveDate || addDays(p.date, 1)) : null,
     approval: ev.below ? { by: p.approveBy.trim(), reason: p.approveReason.trim(), at: now } : null,
@@ -1844,6 +2378,8 @@ async function createTrip() {
     await Promise.all(load.orders.map(o => patch('orders', o.id, { status: 'planned', tripId: id })));
     await Promise.all(load.parcels.map(x => patch('parcels', x.id, { tripId: id })));
     if (w) await patch('checkins', w.id, { status: 'assigned', tripId: id, assignedAt: now });
+    if (p.fhArrive) await Promise.all(fhs.filter(o => !o.unloadAt).map(o => patch('orders', o.id, { unloadAt: p.fhArrive })));
+    if (spare && !Object.values(d.trailers).some(x => x.status === 'out' && x.vehicleId === v.id && normPlate(x.trailerPlate) === normPlate(trailerNo))) await put('trailers', uid(), { trailerPlate: trailerNo, vehicleId: v.id, driverId: p.driverId, takenDate: p.date, kmTaken: num(v.currentKm), trips: trip.no, note: String(p.spareReason).trim(), status: 'out', auto: true });
   } catch { return; }
   ui.dp = blankDp(p.date); ui.dp.line = p.line;
   toast(`สร้างทริป ${trip.no} แล้ว`);
@@ -1972,7 +2508,7 @@ function tripStops(t) {
     const o = String(j.origin || '').trim(), ok = stopKey('n_' + normName(o));
     if (ji > 0 && o && out.length && !seen[ok] && normName(o) !== normName(tripOrigin(t)) && normName(out[out.length - 1].name) !== normName(o)) { seen[ok] = 1; out.push({ key: ok, name: o, branchId: null, hub: false, pickup: true, unloadAt: null }); }
     String(j.destination || '').split(/\s*→\s*|\s+\/\s+/).map(x => x.trim()).filter(Boolean).forEach(nm => {
-      const b = south && j.kind !== 'BH' ? branchFor(nm) : null;
+      const b = south && j.kind !== 'BH' && j.kind !== 'CHARTER' ? branchFor(nm) : null;
       const key = stopKey(b ? 'b_' + b.id : 'n_' + normName(nm));
       if (seen[key]) return; seen[key] = 1;
       out.push({ key, name: b ? b.name : nm, branchId: b ? b.id : null, hub: !!b, unloadAt: j.unloadAt || null });
@@ -2067,6 +2603,8 @@ function myTripCard() {
     ${t.status === 'planned' ? mapLinks(siteFor(tripOrigin(t)), true, 'นำทางไปจุดโหลด') : next && !next.at ? mapLinks(stopSite(next), true) : ''}
     ${t.status === 'running' ? `${next ? (!next.at ? `<button class="btn primary big block" data-act="stopArrive" data-id="${esc(t.id)}" data-k="${esc(next.key)}" ${dis()}>${icon('check')}ถึง ${esc(next.name)} แล้ว</button>` : next.pickup ? '' : `<button class="btn primary big block" data-act="podOpen" data-id="${esc(t.id)}" data-k="${esc(next.key)}" ${dis()}>${icon('camera')}ลงของเสร็จ / ส่งงาน ${esc(next.name)}</button>`) : ''}
       <p class="small muted">กด "ถึงแล้ว" เมื่อถึงจุดส่ง และ "ลงของเสร็จ" เมื่อลงของหมด (ถ่ายรูปบิล สินค้า รถว่าง และให้ผู้รับเซ็น) ระบบจับตำแหน่ง GPS ตอนกดให้</p>
+      <button class="btn block" data-act="pickupOpen" data-id="${esc(t.id)}" ${dis()}>${icon('camera')}เช็คอินจุดรับสินค้าขากลับ (Backhaul)</button>
+      <p class="small muted">ถึงจุดรับงานขากลับ (เช่น ไม้ ทลายปาล์ม) ให้กดปุ่มนี้ ใส่สินค้า น้ำหนักจากตาชั่ง ถ่ายรูปใบชั่ง และปลายทางที่จะส่ง</p>
       ${t.pos ? `<div class="l1">${posChip(t)}</div>` : ''}
       ${posForm(t, true)}
       <p class="small muted">ระหว่างทางกดส่งตำแหน่งเมื่อจอดพักหรือผ่านจังหวัด ฝ่ายจัดรถจะเห็นว่ารถถึงอำเภอไหนแล้ว</p>` : '<p class="small muted">รอออกรถ เมื่อออกรถแล้วกดส่งตำแหน่งได้จากหน้านี้</p>'}
@@ -2229,6 +2767,73 @@ async function submitPod(fd) {
   POD = null;
   toast(e ? `ส่งงานแล้ว · ${placeText(e)}` : 'ส่งงานแล้ว (อ่าน GPS ไม่ได้ จึงไม่มีพิกัด)');
 }
+/* ---------- back-haul pickup check-in (south: ไม้ ทลายปาล์ม …): what, weighbridge photo, GPS, where it goes ---------- */
+const PK_SLOTS = [['scale', 'รูปใบชั่ง / หน้าจอตาชั่ง', true], ['cargo', 'รูปสินค้าบนรถ', false]];
+const PK_LABEL = { scale: 'ใบชั่ง / ตาชั่ง', cargo: 'สินค้าบนรถ' };
+let PK = null;
+function openPickup(t) {
+  if (PK) Object.values(PK.photos).forEach(p => p.url && URL.revokeObjectURL(p.url));
+  PK = { tripId: t.id, photos: {}, loc: undefined, locP: getLoc(15000) };
+  const mine = PK;
+  mine.locP.then(L => { if (PK !== mine) return; mine.loc = L; const el = $('#pk-loc'); if (el) el.innerHTML = L ? chip('good', `ได้ตำแหน่ง ${placeText(locEntry(L, 'gps'))}`, 'pin') : chip('warn', 'อ่าน GPS ไม่ได้ จะบันทึกโดยไม่มีพิกัด', 'pin'); });
+  const open = (t.jobs || []).filter(j => j.kind === 'BH' && !j.pickup);
+  const v = vehicleOf(t.vehicleId);
+  openSheet({ title: 'เช็คอินจุดรับสินค้าขากลับ', submit: 'บันทึกรับสินค้า', onSubmit: fd => submitPickup(fd),
+    body: `<div class="stack">
+      <p class="meta">${esc(v ? v.plate : '')} · ทริป ${esc(t.no)} · ถ่ายรูปใบชั่งให้เห็นน้ำหนัก ระบบจับตำแหน่ง GPS ตอนกดให้</p>
+      <div class="note warn small" id="pk-note" hidden></div>
+      ${open.length ? `<div class="field"><label for="pk-job">งานขากลับ</label><select id="pk-job" name="jobId">${open.map(j => `<option value="${esc(j.id)}">${esc(j.customers || 'Backhaul')} · ${esc(j.origin || '-')} → ${esc(j.destination || '-')}</option>`).join('')}<option value="">งานใหม่ (ยังไม่มีในทริป)</option></select><span class="hint">งานที่ฝ่ายจัดรถเพิ่มไว้แล้ว หรือเลือกงานใหม่</span></div>` : ''}
+      <div class="grid2">
+        <div class="field"><label class="req" for="pk-prod">สินค้า</label><input id="pk-prod" name="product" list="pk-prods" autocomplete="off" placeholder="เช่น ไม้ยาง, ทลายปาล์ม"><datalist id="pk-prods">${['ไม้ยางพารา', 'ไม้สับ', 'ทลายปาล์ม', 'ทลายสับ', 'ยางพารา', 'ปาล์มน้ำมัน'].map(x => `<option value="${x}">`).join('')}</datalist></div>
+        <div class="field"><label for="pk-cus">ลูกค้า / ผู้ส่ง</label><input id="pk-cus" name="customer" autocomplete="off"></div>
+        <div class="field"><label for="pk-place">ชื่อจุดรับ</label><input id="pk-place" name="place" autocomplete="off" placeholder="เว้นว่าง = ใช้อำเภอจาก GPS"></div>
+        <div class="field"><label class="req" for="pk-dest">ส่งไปที่</label><input id="pk-dest" name="dest" autocomplete="off" value="${esc(open[0] ? open[0].destination || '' : '')}" placeholder="เช่น สมุทรสาคร"></div>
+        <div class="field"><label class="req" for="pk-kg">น้ำหนักสินค้าจากตาชั่ง (กก.)</label><input id="pk-kg" name="kg" inputmode="decimal"><span class="hint">รถ ${esc(v ? v.type : '')} ล้อ บรรทุกได้ไม่เกิน ${payloadCap(v) ? tons(payloadCap(v)) : '–'}</span></div>
+        <div class="field"><label for="pk-gross">น้ำหนักรวมรถ (ถ้ามีในใบชั่ง)</label><input id="pk-gross" name="gross" inputmode="decimal"></div>
+      </div>
+      <div class="podgrid">${PK_SLOTS.map(([k, l, req]) => `<label class="podslot" id="pk-slot-${k}"><input type="file" accept="image/*" data-pk="${k}" hidden><span class="thumb" id="pk-ph-${k}">${icon('camera')}</span><span class="small"><b>${esc(l)}</b>${req ? ' <span class="muted">(ต้องมี)</span>' : ''}<br><span class="muted" id="pk-st-${k}">แตะเพื่อถ่ายรูป</span></span></label>`).join('')}</div>
+      <div class="field"><label for="pk-note-in">หมายเหตุ</label><input id="pk-note-in" name="note" autocomplete="off"></div>
+      <div id="pk-loc">${chip('', 'กำลังอ่านตำแหน่ง GPS…', 'pin')}</div>
+      <div id="pk-prog" class="small muted"></div>
+    </div>` });
+  if (S.backend === 'db' && !S.demo) assetsNs().then(a => { if (a || PK !== mine) return; const n = $('#pk-note'); if (n) { n.hidden = false; n.textContent = 'บัญชีนี้แนบรูปไม่ได้ ระบบจะบันทึกน้ำหนัก เวลา และตำแหน่งอย่างเดียว'; } });
+}
+async function submitPickup(fd) {
+  const P = PK; if (!P) return 'ปิดแล้วเปิดใหม่อีกครั้ง';
+  const t0 = S.d.trips[P.tripId]; if (!t0) return 'ไม่พบทริปนี้';
+  const product = String(fd.product || '').trim(), dest = String(fd.dest || '').trim(), kg = num(fd.kg), gross = fd.gross ? num(fd.gross) : null;
+  const miss = []; if (!product) miss.push('สินค้า'); if (!dest) miss.push('ส่งไปที่'); if (kg === null || kg <= 0) miss.push('น้ำหนักจากตาชั่ง');
+  if (fd.gross && gross === null) return 'น้ำหนักรวมรถต้องเป็นตัวเลข';
+  const shared = S.backend === 'db' && !S.demo; const assets = shared ? await assetsNs() : null; const canUpload = !shared || !!assets;
+  if (kg !== null && kg > 0) { const wp = weightProblem(vehicleOf(t0.vehicleId), kg, gross); if (wp) return wp; }
+  if (canUpload && !P.photos.scale) miss.push('รูปใบชั่ง');
+  if (miss.length) return 'ยังขาด: ' + miss.join(', ');
+  const prog = $('#pk-prog'); const say = m => { if (prog) prog.textContent = m; };
+  const photos = {};
+  if (canUpload) { const items = PK_SLOTS.map(([k]) => [k, P.photos[k] && P.photos[k].blob]).filter(x => x[1]); let i = 0; for (const [k, b] of items) { say(`กำลังส่งรูป ${++i}/${items.length}…`); try { photos[k] = shared ? (await uploadPhoto(assets, b)).id : await blobToDataUrl(b); } catch (e) { say(''); return podUploadErr(e); } } }
+  say('กำลังอ่านตำแหน่ง…');
+  const L = P.loc !== undefined ? P.loc : await Promise.race([P.locP, new Promise(r => setTimeout(() => r(null), 5000))]);
+  const e = locEntry(L, 'gps'); const now = new Date().toISOString();
+  const t = S.d.trips[P.tripId] || t0;
+  const pickup = { at: now, by: S.uid || null, src: role === 'driver' ? 'driver' : 'manual', loc: e, place: String(fd.place || '').trim(), product, customer: String(fd.customer || '').trim(), kg, gross, photos, noPhoto: canUpload ? '' : 'แนบรูปไม่ได้ในหน้านี้', note: String(fd.note || '').trim() };
+  const origin = pickup.place || (e ? placeText(e) : 'จุดรับสินค้า');
+  const jobs = [...(t.jobs || [])]; const ji = fd.jobId ? jobs.findIndex(j => j.id === fd.jobId) : -1;
+  const customers = [product, pickup.customer].filter(Boolean).join(' · ');
+  if (ji >= 0) { const j = jobs[ji]; jobs[ji] = { ...j, origin: pickup.place || j.origin || origin, destination: dest || j.destination, customers: j.customers || customers, actualKg: kg, grossKg: gross, pickup }; }
+  else jobs.push({ id: uid(), kind: 'BH', routeId: null, origin, destination: dest, customers, orderIds: [], revenue: null, weightKg: kg, actualKg: kg, grossKg: gross, unloadAt: null, note: pickup.note, pickup });
+  const jo = ji >= 0 ? jobs[ji].origin : origin;
+  const arr = { ...(t.arr || {}) }; const k = stopKey('n_' + normName(jo));
+  if (!(arr[k] && arr[k].at)) arr[k] = { at: now, by: S.uid || null, src: pickup.src, loc: e };
+  const part = { jobs, arr }; if (e) { part.pos = e; part.posLog = [...(t.posLog || []).slice(-29), e]; }
+  try { await patch('trips', t.id, part); } catch { say(''); return 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง'; }
+  Object.values(P.photos).forEach(p => p.url && URL.revokeObjectURL(p.url)); PK = null;
+  toast(`บันทึกรับ${product} ${fmt(kg)} กก. แล้ว${e ? ' · ' + placeText(e) : ''}`);
+}
+function pickupInfo(j) {
+  const pk = j.pickup; if (!pk) return '';
+  return `<div class="stack" style="gap:4px;margin-top:4px"><div class="l1">${chip('good', `เช็คอินรับของ ${dtText(pk.at)} · ตาชั่ง ${fmt(num(pk.kg))} กก.${num(pk.gross) !== null ? ' (รวมรถ ' + fmt(num(pk.gross)) + ')' : ''}`, 'check')}</div>${pk.loc ? `<span class="small meta">${icon('pin')} รับที่ ${esc(placeText(pk.loc))} <a href="${esc(placeMapUrl(pk.loc))}" target="_blank" rel="noopener">แผนที่</a></span>` : ''}${Object.keys(pk.photos || {}).length ? thumbs(pk.photos, PK_LABEL) : chip('warn', pk.noPhoto ? 'ไม่มีรูป · ' + pk.noPhoto : 'ไม่มีรูปใบชั่ง', 'alert')}${pk.note ? `<span class="small muted">${esc(pk.note)}</span>` : ''}</div>`;
+}
+
 /* ---------- GPS เทเลเทค: paste the "ตำแหน่งปัจจุบัน" list to update every truck at once ---------- */
 const plateKey = p => { const m = String(p || '').match(/(\d{1,3})\s*-\s*(\d{4})(?!\d)/); return m ? `${+m[1]}-${m[2]}` : normName(p); };
 const posText = e => (e && e.place ? `${e.place} · ` : '') + placeText(e);
@@ -2346,7 +2951,7 @@ PAGES.trips = () => {
   const list = all.filter(pick[tab]).sort((a, b) => tab === 'active' ? String(a.date).localeCompare(String(b.date)) : String(b.date).localeCompare(String(a.date)));
   return `
   <div class="sec-h">${seg('tripTab', tab, [['active', 'วางแผน / กำลังวิ่ง', all.filter(pick.active).length], ['closed', 'ปิดแล้ว', all.filter(pick.closed).length], ['cancel', 'ยกเลิก', all.filter(pick.cancel).length]])}<a class="btn primary" href="#dispatch">${icon('plus')}จัดรถใหม่</a></div>
-  ${tab === 'active' ? `<div class="rowflex" style="justify-content:space-between;align-items:center"><span class="small muted">ตำแหน่งรถทุกคันจาก GPS เทเลเทค</span><button class="btn sm" data-act="gpsImport" ${dis()}>${icon('gps')}วางตำแหน่งจาก GPS</button></div>` + notifySection(all) : ''}
+  ${tab === 'active' ? `<div class="rowflex" style="justify-content:space-between;align-items:center"><span class="small muted">ตำแหน่งรถทุกคันจาก GPS เทเลเทค</span><button class="btn sm" data-act="gpsImport" ${dis()}>${icon('gps')}วางตำแหน่งจาก GPS</button></div>` + notifySection(all) + feedSection(all) : ''}
   <div class="list">${list.length ? list.map(tripRow).join('') : empty('ไม่มีทริปในกลุ่มนี้', 'สร้างทริปจากหน้า จัดรถ')}</div>
   <p class="small muted">1 Trip = รถออกจากฐาน (ปั๊มนครสวรรค์ / คลังสาย 3) หนึ่งรอบจนกลับ · 1 Trip มีได้หลาย Job (ขา) เช่น นครสวรรค์ → สาย 3 (ขาลง) → สมุทรสาคร (ขากลับ) → นครสวรรค์ · Standard KM ของทริป = ผลรวมทุกขา</p>`;
 };
@@ -2356,13 +2961,13 @@ function notifySection(all) {
   const groups = {};
   pend.forEach(t => { const k = t.date + '|' + tripOrigin(t); (groups[k] = groups[k] || []).push(t); });
   return `<section class="sec"><div class="sec-h"><h2>แจ้งทะเบียนโรงงาน</h2><span class="sub">${pend.length} ทริปยังไม่ได้แจ้ง</span></div>
-    ${Object.entries(groups).map(([k, ts]) => { const [date, origin] = k.split('|'); const msg = factoryMsg(ts, origin, date); return `<div class="card pad stack"><div class="l1"><b>${esc(origin || 'ไม่ระบุต้นทาง')}</b> <span class="small muted">โหลด ${thDate(date)} · ${ts.length} คัน</span></div><pre class="note small" style="white-space:pre-wrap;margin:0;font-family:var(--f-body)">${esc(msg)}</pre><div class="rowflex"><button class="btn sm" data-act="copyText" data-v="${esc(msg)}">${icon('copy')}คัดลอกข้อความ</button><button class="btn sm primary" data-act="notifyGroup" data-ids="${esc(ts.map(t => t.id).join(','))}" ${dis()}>${icon('check')}บันทึกว่าแจ้งแล้ว</button></div></div>`; }).join('')}
+    ${Object.entries(groups).map(([k, ts]) => { const [date, origin] = k.split('|'); const msg = factoryMsg(ts, origin, date); const ns = notifyState(ts[0]); return `<div class="card pad stack"><div class="l1"><b>${esc(origin || 'ไม่ระบุต้นทาง')}</b> <span class="small muted">โหลด ${thDate(date)} · ${ts.length} คัน</span> ${ns ? chip(ns.st || 'info', ns.text, 'clock') : ''}</div><pre class="note small" style="white-space:pre-wrap;margin:0;font-family:var(--f-body)">${esc(msg)}</pre><div class="rowflex"><button class="btn sm" data-act="copyText" data-v="${esc(msg)}">${icon('copy')}คัดลอกข้อความ</button><button class="btn sm primary" data-act="notifyGroup" data-ids="${esc(ts.map(t => t.id).join(','))}" ${dis()}>${icon('check')}บันทึกว่าแจ้งแล้ว</button></div></div>`; }).join('')}
   </section>`;
 }
 function tripRow(t) {
   const v = vehicleOf(t.vehicleId); const c = tripCalc(t);
   return `<a class="row" href="#trip-${esc(t.id)}" style="text-decoration:none;color:inherit"><div class="main">
-    <div class="l1"><b class="mono">${esc(t.no)}</b> ${statusChip(TRIP_STATUS, t.status)} ${lineBadge(tripLine(t))} <span class="small muted">ออก ${thDate(t.date)}${t.loadAt ? ' โหลด ' + hhmm(t.loadAt) : ''}</span> ${dueChip(minDue(t.jobs || []), t.status === 'closed' || t.status === 'cancel')} ${t.status === 'planned' && !t.notifiedAt && needsFactory(t) ? chip('warn', 'ยังไม่แจ้งทะเบียนโรงงาน') : ''}</div>
+    <div class="l1"><b class="mono">${esc(t.no)}</b> ${statusChip(TRIP_STATUS, t.status)} ${lineBadge(tripLine(t))} <span class="small muted">ออก ${thDate(t.date)}${t.loadAt ? ' โหลด ' + hhmm(t.loadAt) : ''}</span> ${dueChip(minDue(t.jobs || []), t.status === 'closed' || t.status === 'cancel')} ${(() => { const ns = notifyState(t); return ns ? chip(ns.st || 'warn', 'ยังไม่แจ้งทะเบียนโรงงาน') : ''; })()}${(t.status === 'planned' || t.status === 'running') && !feedDone(t) ? chip(t.status === 'running' ? 'serious' : 'warn', 'ยังไม่คีย์ Feed Card', 'fuel') : ''}${(t.status === 'planned' || t.status === 'running') && t.spareTrailer ? chip('serious', 'หางสำรอง ' + t.spareTrailer.plate, 'trailer') : ''}</div>
     <div class="l1">${plate(v)} ${vt(v && v.type)} <span class="meta">${esc(driverName(t.driverId))}</span></div>
     <div class="l1">${(t.jobs || []).map(j => `${kindB(j.kind)} <span class="meta">${esc(j.destination || '-')}</span>`).join(' <span class="muted">·</span> ')}</div>
     ${t.status === 'running' ? (() => { const nx = tripStops(t).find(x => !stopDone(x)); const ns = nx ? stopState(nx) : null; return `<div class="l1">${posChip(t, false)}${nx ? ' ' + chip(ns[0], `${nx.at ? 'อยู่ที่' : 'ต่อไป'} ${nx.name} · ${ns[1]}`, 'clock') : ''}</div>`; })() : ''}
@@ -2402,10 +3007,10 @@ PAGES.trip = id => {
       </div>
       <h3>น้ำมัน (Feed Card)</h3>
       <div class="grid3">
-        <div class="field"><label for="tc-l">ลิตร</label><input id="tc-l" name="fuelLiters" inputmode="decimal"></div>
+        <div class="field"><label for="tc-l">ลิตร</label><input id="tc-l" name="fuelLiters" inputmode="decimal" value="${esc(t.feed ? num(t.feed.liters) ?? '' : '')}">${t.feed ? '<span class="hint">ค่าเริ่มต้นจากที่คีย์ Feed Card</span>' : ''}</div>
         <div class="field"><label for="tc-p">ราคา/ลิตร</label><input id="tc-p" name="fuelPrice" inputmode="decimal"></div>
         <div class="field"><label for="tc-fc">มูลค่าน้ำมัน</label><input id="tc-fc" name="fuelCost" inputmode="decimal" placeholder="เว้นว่าง = ลิตร × ราคา"></div>
-        <div class="field"><label for="tc-card">เลข Feed Card</label><input id="tc-card" name="feedCard"></div>
+        <div class="field"><label for="tc-card">เลข Feed Card</label><input id="tc-card" name="feedCard" value="${esc((t.feed && t.feed.card) || '')}"></div>
       </div>
       <h3>ค่าใช้จ่ายอื่น</h3>
       <div class="grid3">
@@ -2427,13 +3032,16 @@ PAGES.trip = id => {
     ${t.loadAt ? `<div class="meta">${icon('clock')} เข้าโหลด ${dtText(t.loadAt)}</div>` : ''}
     ${num(t.actualCargoKg) !== null ? `<div class="l1">${chip('good', `น้ำหนักจริงตอนออกรถ ${tons(num(t.actualCargoKg))}${num(t.grossKg) !== null ? ' · รวมตาชั่ง ' + tons(num(t.grossKg)) : ''}`, 'check')}</div>` : (t.status === 'running' || t.status === 'closed') && (t.jobs || []).some(j => j.kind !== 'BH' && j.kind !== 'EMPTY') ? `<div class="l1">${chip('warn', 'ยังไม่ได้ใส่น้ำหนักจริงตอนออกรถ')} <button class="btn sm" data-act="tripWeight" data-id="${esc(t.id)}" ${dis()}>ใส่น้ำหนักจริง</button></div>` : ''}
     ${t.approval ? `<div class="note warn small">อนุมัติกรณีพิเศษโดย ${esc(t.approval.by)}: ${esc(t.approval.reason)}</div>` : ''}
+    ${t.spareTrailer ? `<div class="note crit small">${icon('trailer')} ใช้หางสำรอง <b>${esc(t.spareTrailer.plate)}</b> แทนหางประจำ ${esc(t.spareTrailer.regular || '-')}${t.spareTrailer.reason ? ' · ' + esc(t.spareTrailer.reason) : ''} · ระวังเรื่องซ่อมบำรุงและยาง</div>` : ''}
+    ${t.partnerOverride ? `<div class="note warn small">ใช้รถบริษัทไปจังหวัด Partner (${esc((t.partnerOverride.hubs || []).join(', '))}): ${esc(t.partnerOverride.reason)}</div>` : ''}
   </div>
   ${t.status !== 'cancel' ? trackCard(t) : ''}
-  ${(t.status === 'planned' || t.status === 'running') && needsFactory(t) ? (() => { const msg = factoryMsg([t], tripOrigin(t), t.date); return `<section class="card pad stack"><div class="sec-h"><h2>แจ้งทะเบียนโรงงาน</h2>${t.notifiedAt ? chip('good', 'แจ้งแล้ว ' + thDT(t.notifiedAt)) : chip('warn', 'ยังไม่ได้แจ้ง')}</div><pre class="note small" style="white-space:pre-wrap;margin:0;font-family:var(--f-body)">${esc(msg)}</pre><div class="rowflex"><button class="btn sm" data-act="copyText" data-v="${esc(msg)}">${icon('copy')}คัดลอกข้อความ</button>${t.notifiedAt ? '' : `<button class="btn sm primary" data-act="notifyGroup" data-ids="${esc(t.id)}" ${dis()}>${icon('check')}บันทึกว่าแจ้งแล้ว</button>`}</div></section>`; })() : ''}
+  ${t.status !== 'cancel' ? feedCard(t) : ''}
+  ${(t.status === 'planned' || t.status === 'running') && needsFactory(t) ? (() => { const msg = factoryMsg([t], tripOrigin(t), t.date); return `<section class="card pad stack"><div class="sec-h"><h2>แจ้งทะเบียนโรงงาน</h2>${t.notifiedAt ? chip('good', 'แจ้งแล้ว ' + thDT(t.notifiedAt)) : (() => { const ns = notifyState(t); return chip((ns && ns.st) || 'warn', ns ? ns.text : 'ยังไม่ได้แจ้ง', 'clock'); })()}</div><pre class="note small" style="white-space:pre-wrap;margin:0;font-family:var(--f-body)">${esc(msg)}</pre><div class="rowflex"><button class="btn sm" data-act="copyText" data-v="${esc(msg)}">${icon('copy')}คัดลอกข้อความ</button>${t.notifiedAt ? '' : `<button class="btn sm primary" data-act="notifyGroup" data-ids="${esc(t.id)}" ${dis()}>${icon('check')}บันทึกว่าแจ้งแล้ว</button>`}</div></section>`; })() : ''}
   ${action}
   <section class="sec">
-    <div class="sec-h"><h2>งานในทริป (ขา / Job)</h2>${t.status !== 'closed' && t.status !== 'cancel' ? `<button class="btn sm" data-act="addJob" data-id="${esc(t.id)}" ${dis()}>${icon('plus')}เพิ่มขา (Backhaul / วิ่งเปล่า)</button>` : ''}</div>
-    <div class="list">${(t.jobs || []).map(j => { const r = routeOf(j.routeId); return `<div class="row"><div class="main"><div class="l1">${kindB(j.kind)} <b>${esc(j.origin || '–')} → ${esc(j.destination || '–')}</b> ${dueChip(j.dueDate, t.status === 'closed' || t.status === 'cancel')}</div>${jobPlaces(j.origin, j.destination)}${j.unloadAt || (j.kind === 'BH' && t.status !== 'planned' && t.status !== 'cancel') ? `<div class="l1">${j.unloadAt ? chip('', 'นัดลงสินค้า ' + dtText(j.unloadAt), 'clock') : ''}${j.kind === 'BH' ? (num(j.actualKg) !== null ? chip('good', 'น้ำหนักจริง ' + tons(num(j.actualKg)), 'check') : t.status === 'running' ? chip('warn', 'ยังไม่ได้ใส่น้ำหนักจริง') : '') : ''}</div>` : ''}<div class="small meta num">${j.customers ? esc(j.customers) + ' · ' : ''}${j.parcel ? `${c.parcels.length} บิล · ${fmt(pBoxes)} กล่อง · ยิงขึ้นรถ ${pLoaded}/${pBoxes} · <b>${money(c.parcelRevenue)}</b>` : `${(j.orderIds || []).length} ออเดอร์ · ${fmt(num(j.bills))} บิล · ${fmt(num(j.weightKg))} กก. · <b>${money(num(j.revenue))}</b>`}${r ? ' · ' + esc(r.name) + (num(r.standardKm) ? ` (${fmt(num(r.standardKm))} กม.)` : '') : ''}</div>${j.note ? `<div class="small muted">${esc(j.note)}</div>` : ''}<div class="actions">${j.kind === 'BH' && t.status === 'running' ? `<button class="btn sm" data-act="jobWeight" data-id="${esc(t.id)}" data-job="${esc(j.id)}" ${dis()}>ใส่น้ำหนักจริงงานนี้</button>` : ''}${j.parcel ? `<a class="btn sm" href="#scan" data-act="scanForTrip" data-id="${esc(t.id)}">${icon('scan')}ยิงพัสดุขึ้นรถ</a>` : ''}${t.status !== 'closed' && t.status !== 'cancel' && (t.jobs || []).length > 1 ? `<button class="btn sm danger" data-act="removeJob" data-id="${esc(t.id)}" data-job="${esc(j.id)}" ${dis()}>เอาขานี้ออก</button>` : ''}</div></div></div>`; }).join('') || empty('ยังไม่มีงาน', '')}</div>
+    <div class="sec-h"><h2>งานในทริป (ขา / Job)</h2><div class="rowflex">${t.status === 'running' ? `<button class="btn sm" data-act="pickupOpen" data-id="${esc(t.id)}" ${dis()}>${icon('camera')}เช็คอินรับของขากลับ</button>` : ''}${t.status !== 'closed' && t.status !== 'cancel' ? `<button class="btn sm" data-act="addJob" data-id="${esc(t.id)}" ${dis()}>${icon('plus')}เพิ่มขา (Backhaul / วิ่งเปล่า)</button>` : ''}</div></div>
+    <div class="list">${(t.jobs || []).map(j => { const r = routeOf(j.routeId); return `<div class="row"><div class="main"><div class="l1">${kindB(j.kind)} <b>${esc(j.origin || '–')} → ${esc(j.destination || '–')}</b> ${dueChip(j.dueDate, t.status === 'closed' || t.status === 'cancel')}</div>${jobPlaces(j.origin, j.destination)}${j.unloadAt || (j.kind === 'BH' && t.status !== 'planned' && t.status !== 'cancel') ? `<div class="l1">${j.unloadAt ? chip('', 'นัดลงสินค้า ' + dtText(j.unloadAt), 'clock') : ''}${j.kind === 'BH' ? (num(j.actualKg) !== null ? chip('good', 'น้ำหนักจริง ' + tons(num(j.actualKg)), 'check') : t.status === 'running' ? chip('warn', 'ยังไม่ได้ใส่น้ำหนักจริง') : '') : ''}</div>` : ''}<div class="small meta num">${j.customers ? esc(j.customers) + ' · ' : ''}${j.parcel ? `${c.parcels.length} บิล · ${fmt(pBoxes)} กล่อง · ยิงขึ้นรถ ${pLoaded}/${pBoxes} · <b>${money(c.parcelRevenue)}</b>` : `${(j.orderIds || []).length} ออเดอร์ · ${fmt(num(j.bills))} บิล · ${fmt(num(j.weightKg))} กก. · <b>${money(num(j.revenue))}</b>`}${r ? ' · ' + esc(r.name) + (num(r.standardKm) ? ` (${fmt(num(r.standardKm))} กม.)` : '') : ''}</div>${j.note ? `<div class="small muted">${esc(j.note)}</div>` : ''}${pickupInfo(j)}<div class="actions">${j.kind === 'BH' && t.status === 'running' ? `<button class="btn sm" data-act="jobWeight" data-id="${esc(t.id)}" data-job="${esc(j.id)}" ${dis()}>ใส่น้ำหนักจริงงานนี้</button>` : ''}${j.parcel ? `<a class="btn sm" href="#scan" data-act="scanForTrip" data-id="${esc(t.id)}">${icon('scan')}ยิงพัสดุขึ้นรถ</a>` : ''}${t.status !== 'closed' && t.status !== 'cancel' && (t.jobs || []).length > 1 ? `<button class="btn sm danger" data-act="removeJob" data-id="${esc(t.id)}" data-job="${esc(j.id)}" ${dis()}>เอาขานี้ออก</button>` : ''}</div></div></div>`; }).join('') || empty('ยังไม่มีงาน', '')}</div>
   </section>
   <section class="sec">
     <h2>ระยะทาง น้ำมัน ต้นทุน</h2>
@@ -2449,6 +3057,40 @@ PAGES.trip = id => {
     </div>
   </section>`;
 };
+
+function feedCard(t) {
+  const v = vehicleOf(t.vehicleId); const plan = tripFuelPlan(t); const f = t.feed; const rate = v ? settings().fuelStd[v.type] : null;
+  return `<section class="card pad stack">
+    <div class="sec-h"><h2>น้ำมัน / Feed Card</h2>${feedDone(t) ? chip('good', 'คีย์เข้า Feed Card แล้ว', 'check') : chip(t.status === 'running' ? 'serious' : 'warn', 'ยังไม่ได้คีย์เข้า Feed Card', 'fuel')}</div>
+    <div class="kv">
+      <div><span>น้ำมันที่ให้ตาม Standard KM</span><b>${plan === null ? '–' : fmt(plan) + ' ลิตร'}</b><em>${num(t.standardKm) ? `${fmt(num(t.standardKm))} กม. ÷ ${fmt(rate, 1)} กม./ลิตร (รถ ${esc(v ? v.type : '-')} ล้อ)` : 'ยังไม่มี Standard KM ของทริป'}</em></div>
+      ${f ? `<div><span>คีย์เข้า Feed Card</span><b>${fmt(num(f.liters))} ลิตร</b><em>${f.card ? 'Card ' + esc(f.card) + ' · ' : ''}${thDT(f.at)}${f.note ? ' · ' + esc(f.note) : ''}</em></div>` : `<div><span>คีย์เข้า Feed Card</span><b>ยังไม่คีย์</b><em>${t.status === 'planned' ? 'คีย์ก่อนรถออก' : 'รถออกแล้ว คีย์ให้เรียบร้อย'}</em></div>`}
+    </div>
+    ${f && plan !== null && num(f.liters) !== null && Math.abs(num(f.liters) - plan) > Math.max(10, plan * 0.1) ? `<div class="note warn small">คีย์ ${fmt(num(f.liters))} ลิตร ต่างจากที่ควรให้ตาม Standard KM ${fmt(plan)} ลิตร</div>` : ''}
+    ${t.status !== 'closed' ? `<div class="rowflex"><button class="btn sm ${feedDone(t) ? '' : 'primary'}" data-act="feedKey" data-id="${esc(t.id)}" ${dis()}>${icon('fuel')}${feedDone(t) ? 'แก้ไขที่คีย์ Feed Card' : 'บันทึกว่าคีย์ Feed Card แล้ว'}</button></div>` : ''}
+    <p class="small muted">ระบบหลักเรื่องน้ำมันคือ Feed Card ฝ่ายจัดรถคีย์น้ำมันที่ให้ในระบบ Feed Card แล้วกดบันทึกที่นี่ เพื่อเช็คว่าทุกทริปคีย์ครบ</p>
+  </section>`;
+}
+function openFeed(t) {
+  const v = vehicleOf(t.vehicleId); const plan = tripFuelPlan(t); const f = t.feed || {};
+  openSheet({ title: 'คีย์น้ำมันเข้า Feed Card · ' + t.no, submit: 'บันทึก', body: `<div class="grid2">
+      ${fieldHtml({ k: 'liters', label: 'ลิตรที่คีย์ในระบบ Feed Card', type: 'number', req: true, hint: plan !== null ? `ตาม Standard KM ควรให้ ${fmt(plan)} ลิตร` : 'ทริปนี้ยังไม่มี Standard KM' }, f.liters ?? plan ?? '')}
+      ${fieldHtml({ k: 'card', label: 'เลข Feed Card' }, f.card || (v && v.feedCard) || '')}
+      ${fieldHtml({ k: 'note', label: 'หมายเหตุ' }, f.note || '')}</div>`,
+    onSubmit: async fd => {
+      const l = num(fd.liters); if (l === null || l <= 0) return 'กรอกจำนวนลิตรที่คีย์';
+      const card = String(fd.card || '').trim();
+      await patch('trips', t.id, { feed: { at: new Date().toISOString(), by: S.uid || null, liters: l, card, note: String(fd.note || '').trim(), plan } });
+      if (v && card && card !== v.feedCard) await patch('vehicles', v.id, { feedCard: card });
+      toast('บันทึกว่าคีย์ Feed Card แล้ว');
+    } });
+}
+function feedSection(all) {
+  const pend = all.filter(t => (t.status === 'planned' || t.status === 'running') && !feedDone(t)).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if (!pend.length) return '';
+  return `<section class="sec"><div class="sec-h"><h2>Feed Card: ยังไม่ได้คีย์น้ำมัน</h2><span class="sub">${pend.length} ทริป</span></div>
+    <div class="list">${pend.map(t => { const v = vehicleOf(t.vehicleId); const pl = tripFuelPlan(t); return `<div class="row" style="align-items:center"><div class="main"><div class="l1">${plate(v)} <b class="mono">${esc(t.no)}</b> ${statusChip(TRIP_STATUS, t.status)}</div><div class="small meta">ออก ${thDate(t.date)} · ควรให้ ${pl === null ? '– (ไม่มี Standard KM)' : fmt(pl) + ' ลิตร'}</div></div><button class="btn sm primary" data-act="feedKey" data-id="${esc(t.id)}" ${dis()}>${icon('fuel')}คีย์แล้ว</button></div>`; }).join('')}</div></section>`;
+}
 
 /* ---------- maintenance ---------- */
 PAGES.maint = () => {
@@ -2519,7 +3161,7 @@ const FIELDS = {
     { k: 'line', label: 'สาย', type: 'select', opts: LINE_OPTS },
     { k: 'origin', label: 'ต้นทาง' },
     { k: 'destination', label: 'ปลายทาง' },
-    { k: 'standardKm', label: 'Standard KM ของขานี้', type: 'number' },
+    { k: 'standardKm', label: 'Standard KM ของขานี้', type: 'number', hint: 'น้ำมันที่ให้ = Standard KM ÷ อัตรามาตรฐาน (ตั้งที่ ค่าตั้งค่า)' },
     { k: 'allowance', label: 'เบี้ยเลี้ยงมาตรฐาน (บาท)', type: 'number' },
     { k: 'toll', label: 'ค่าทางด่วนมาตรฐาน (บาท)', type: 'number' },
     { k: 'note', label: 'หมายเหตุ', type: 'textarea' },
@@ -2551,6 +3193,7 @@ const FIELDS = {
     { k: 'dueDate', label: 'กำหนดส่งถึงลูกค้า', type: 'date', req: true },
     { k: 'senderName', label: 'ชื่อผู้ส่ง', req: true }, { k: 'senderPhone', label: 'เบอร์ผู้ส่ง', type: 'tel', req: true },
     { k: 'receiverName', label: 'ชื่อผู้รับ', req: true }, { k: 'receiverPhone', label: 'เบอร์ผู้รับ', type: 'tel', req: true },
+    { k: 'senderAddress', label: 'ที่อยู่ผู้ส่ง' },
     { k: 'receiverAddress', label: 'ที่อยู่ผู้รับ' },
     { k: 'province', label: 'จังหวัดปลายทาง', type: 'select', req: true, opts: PROVINCES.map(p => [p, p]) },
     { k: 'branchId', label: 'สาขาปลายทาง', type: 'branch' },
@@ -2558,7 +3201,7 @@ const FIELDS = {
     { k: 'boxes', label: 'จำนวนกล่อง', type: 'number', req: true }, { k: 'weightKg', label: 'น้ำหนักรวม (กก.)', type: 'number', req: true },
     { k: 'fee', label: 'ค่าขนส่ง (บาท)', type: 'number', req: true },
     { k: 'payer', label: 'ใครจ่ายค่าขนส่ง', type: 'select', opts: [['origin', 'ผู้ส่งจ่ายที่ต้นทาง'], ['cod', 'เก็บปลายทาง (ค่าขนส่งเท่านั้น)']] },
-    { k: 'description', label: 'รายละเอียดสินค้า' }, { k: 'note', label: 'หมายเหตุ', type: 'textarea' },
+    { k: 'description', label: 'สินค้า' }, { k: 'note', label: 'หมายเหตุ', type: 'textarea' },
   ],
 };
 const MASTER_TABS = [['vehicles', 'รถ'], ['drivers', 'คนขับ'], ['sites', 'สถานที่'], ['routes', 'เส้นทาง']];
@@ -2583,10 +3226,10 @@ PAGES.master = () => {
 };
 function masterRow(tab, x) {
   const btns = `<div class="actions"><button class="btn sm" data-act="edit" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>แก้ไข</button><button class="btn sm danger" data-act="delete" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>ลบ</button></div>`;
-  if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${baseBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">${[`รับ ${fmt(num(payloadCap(x)))} กก.`, num(x.tareKg) ? `รถเปล่า ${fmt(num(x.tareKg))} กก.` : '', num(x.capPallets) ? `${fmt(num(x.capPallets))} พาเลท` : '', num(x.capVolumeCbm) ? `${fmt(num(x.capVolumeCbm))} คิว` : '', x.gpsProvider ? `GPS ${esc(x.gpsProvider)}` : '', num(x.currentKm) !== null ? `ไมล์ ${fmt(num(x.currentKm))}` : '', esc(m.label)].filter(Boolean).join(' · ')}</div>${x.gps ? `<div class="small meta">${icon('pin')} ${esc(posText(x.gps))} · ${esc(agoText(x.gps.at))} · ${esc(posSrc(x.gps))}</div>` : ''}${x.driverId && S.d.drivers[x.driverId] ? `<div class="small meta">${icon('user')} ${esc(S.d.drivers[x.driverId].name)}${S.d.drivers[x.driverId].phone ? ' · ' + esc(S.d.drivers[x.driverId].phone) : ''}</div>` : `<div class="small meta">${icon('user')} ยังไม่มีคนขับประจำ</div>`}${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${(() => { const dup = x.trailerPlate ? Object.values(S.d.vehicles).filter(o => o.id !== x.id && o.trailerPlate === x.trailerPlate).map(o => o.plate) : []; return dup.length ? chip('warn', `หาง ${x.trailerPlate} ซ้ำกับรถ ${dup.join(', ')}`) : ''; })()}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
+  if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${baseBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">${[`รับ ${fmt(num(payloadCap(x)))} กก.`, num(x.tareKg) ? `รถเปล่า ${fmt(num(x.tareKg))} กก.` : '', num(x.capPallets) ? `${fmt(num(x.capPallets))} พาเลท` : '', num(x.capVolumeCbm) ? `${fmt(num(x.capVolumeCbm))} คิว` : '', x.gpsProvider ? `GPS ${esc(x.gpsProvider)}` : '', num(x.currentKm) !== null ? `ไมล์ ${fmt(num(x.currentKm))}` : '', esc(m.label)].filter(Boolean).join(' · ')}</div>${x.gps ? `<div class="small meta">${icon('pin')} ${esc(posText(x.gps))} · ${esc(agoText(x.gps.at))} · ${esc(posSrc(x.gps))}</div>` : ''}${x.driverId && S.d.drivers[x.driverId] ? `<div class="small meta">${icon('user')} ${esc(S.d.drivers[x.driverId].name)}${S.d.drivers[x.driverId].phone ? ' · ' + esc(S.d.drivers[x.driverId].phone) : ''}</div>` : `<div class="small meta">${icon('user')} ยังไม่มีคนขับประจำ</div>`}${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${(x.trailerLog || []).length ? (() => { const g = x.trailerLog[x.trailerLog.length - 1]; return `<div class="small meta">${icon('trailer')} เปลี่ยนหางประจำ ${esc(g.from || '-')} → ${esc(g.to || '-')} · ${thDT(g.at)}</div>`; })() : ''}${(() => { const dup = x.trailerPlate ? Object.values(S.d.vehicles).filter(o => o.id !== x.id && o.trailerPlate === x.trailerPlate).map(o => o.plate) : []; return dup.length ? chip('warn', `หาง ${x.trailerPlate} ซ้ำกับรถ ${dup.join(', ')}`) : ''; })()}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
   if (tab === 'drivers') return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> ${x.nickname ? `<span class="meta">(${esc(x.nickname)})</span>` : ''} ${x.active === false ? chip('', 'พัก / ออกแล้ว') : ''}</div><div class="small meta">${x.phone ? esc(x.phone) : 'ไม่มีเบอร์โทร'}${(() => { const vs = Object.values(S.d.vehicles).filter(v => v.driverId === x.id).map(v => v.plate); return vs.length ? ` · ขับ ${esc(vs.join(', '))}` : ''; })()}</div>${btns}</div></div>`;
   if (tab === 'sites') { const pinned = x.lat !== null && x.lat !== undefined; const ck = CHECKIN_KINDS.includes(x.kind); return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> <span class="small muted">${esc(SITE_KIND[x.kind] || '')}</span> ${lineBadge(x.line)} ${ck ? (pinned ? chip('good', 'ปักหมุดแล้ว', 'pin') : chip('warn', 'ยังไม่ปักหมุด', 'pin')) : ''} ${x.operator ? chip(x.operator === 'Partner' ? '' : 'info', x.operator === 'SSC' ? 'กระจายโดยรถบริษัท' : x.operator === 'Partner' ? 'กระจายโดย Partner' : 'รถบริษัท + Partner') : ''}</div>${hasPin(x) || x.mapsUrl ? `<div class="l1">${mapLinks(x)}</div>` : ''}${x.aliases ? `<div class="small meta">ชื่อเรียกหน้างาน: ${esc(x.aliases)}</div>` : ''}${x.backhaulCutoff ? `<div class="small meta">ตัดรอบรถมีงาน Backhaul ${esc(x.backhaulCutoff)} น.</div>` : ''}${x.provinces ? `<div class="small meta">ดูแลจังหวัด: ${esc(x.provinces)}</div>` : ''}${ck ? `<div class="small meta num">${pinned ? `${(+x.lat).toFixed(5)}, ${(+x.lng).toFixed(5)} · รัศมี ${fmt(num(x.radiusM) || settings().defaultRadiusM)} ม. · ${locLink(x)}` : 'วางพิกัดจาก Google Maps ในหน้าแก้ไข'}</div>` : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
-  return `<div class="row"><div class="main"><div class="l1">${kindB(x.kind)} <b>${esc(x.name)}</b> ${lineBadge(x.line)}</div><div class="small meta num">${esc(x.origin || '–')} → ${esc(x.destination || '–')} · Standard ${num(x.standardKm) ? fmt(num(x.standardKm)) + ' กม.' : 'ยังไม่มี'} · เบี้ยเลี้ยง ${money(num(x.allowance))} · ทางด่วน ${money(num(x.toll))}</div>${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`;
+  return `<div class="row"><div class="main"><div class="l1">${kindB(x.kind)} <b>${esc(x.name)}</b> ${lineBadge(x.line)}</div><div class="small meta num">${esc(x.origin || '–')} → ${esc(x.destination || '–')} · Standard ${num(x.standardKm) ? fmt(num(x.standardKm)) + ' กม.' : 'ยังไม่มี'} · เบี้ยเลี้ยง ${money(num(x.allowance))} · ทางด่วน ${money(num(x.toll))}</div>${num(x.standardKm) ? `<div class="small meta">${icon('fuel')} น้ำมันที่ให้: ${esc(fuelText(x.standardKm))}</div>` : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`;
 }
 function fieldHtml(f, val) {
   const id = 'f-' + f.k; const req = f.req ? 'req' : '';
@@ -2629,6 +3272,7 @@ function openEditor(col, id) {
         else o[f.k] = v || (f.type === 'select' || f.type === 'route' || f.type === 'branch' || f.type === 'driver' ? null : '');
       }
       if (col === 'vehicles' && o.plate) { const dup = Object.values(S.d.vehicles).find(x => x.id !== (cur && cur.id) && normPlate(x.plate) === normPlate(o.plate)); if (dup) errs.push('มีทะเบียนนี้ในระบบแล้ว'); }
+      if (col === 'vehicles' && cur && normPlate(cur.trailerPlate) !== normPlate(o.trailerPlate)) o.trailerLog = [...(cur.trailerLog || []), { from: cur.trailerPlate || '', to: o.trailerPlate || '', at: new Date().toISOString(), by: S.uid || null }].slice(-20);
       if (col === 'sites' && o.backhaulCutoff && cutoffMin(o) === null) errs.push('เวลาตัดรอบต้องเป็นรูปแบบ ชั่วโมง:นาที เช่น 10:00');
       if (col === 'parcels' && o.boxes !== null && (o.boxes < 1 || Math.round(o.boxes) !== o.boxes)) errs.push('จำนวนกล่องต้องเป็นจำนวนเต็มตั้งแต่ 1');
       if (errs.length) return errs.join(' · ');
@@ -2658,7 +3302,7 @@ function tableRows(text) {
   const split = l => delim === '\t' ? l.split('\t') : csvSplit(l);
   return { headers: split(lines[0]).map(h => h.trim()), rows: lines.slice(1).map(split) };
 }
-function parseKind(v) { const s = normH(v); if (!s) return 'OTHER'; if (s.includes('ร้านค้า') || s === 'store') return 'STORE'; if (s.includes('เหมา') || s.includes('front') || s === 'fh') return 'FH'; if (s.includes('back') || s === 'bh' || s.includes('ขากลับ')) return 'BH'; if (s.includes('ใต้') || s.includes('south') || s.includes('สาย3')) return 'SOUTH'; if (s.includes('เปล่า') || s === 'empty') return 'EMPTY'; return 'OTHER'; }
+function parseKind(v) { const s = normH(v); if (!s) return 'OTHER'; if (s.includes('ร้านค้า') || s === 'store') return 'STORE'; if (s.includes('งานเหมา') || s.includes('charter')) return 'CHARTER'; if (s.includes('เหมา') || s.includes('front') || s === 'fh') return 'FH'; if (s.includes('back') || s === 'bh' || s.includes('ขากลับ')) return 'BH'; if (s.includes('ใต้') || s.includes('south') || s.includes('สาย3')) return 'SOUTH'; if (s.includes('เปล่า') || s === 'empty') return 'EMPTY'; return 'OTHER'; }
 function parseLine(v) { const s = normH(v); if (/เหนือ|north/.test(s)) return 'north'; if (/ใต้|south/.test(s)) return 'south'; if (/ตะวันออก|east/.test(s)) return 'east'; return null; }
 function parseDate(v) { const s = String(v || '').trim(); let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) { let y = +m[1]; if (y > 2400) y -= 543; return `${y}-${pad(m[2])}-${pad(m[3])}`; } m = s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})/); if (m) { let y = +m[3]; if (y < 100) y += y > 50 ? 2500 : 2000; if (y > 2400) y -= 543; return `${y}-${pad(m[2])}-${pad(m[1])}`; } return ''; }
 function parseImport(entity, text) {
@@ -2780,6 +3424,7 @@ PAGES.settings = () => {
         <div class="field"><label for="s-tm">จุดที่จับคู่เวลาลงของ → โหลด</label><input id="s-tm" name="timeMatchAt" value="${esc(s.timeMatchAt)}"><span class="hint">เฮียกำหนดใช้เฉพาะที่โรงงานนี้ ที่อื่นรถที่ยังติดทริปจะจัดงานใหม่ไม่ได้</span></div>
         <div class="field"><label for="s-arr">รถสายใต้ต้องถึงสาขาก่อน</label><input id="s-arr" name="southArriveBy" type="time" value="${esc(s.southArriveBy)}"><span class="hint">ทุกสาขาภาคใต้ (เฮีย: ประมาณ 07:00 น.)</span></div>
         <div class="field"><label for="s-pos">เตือนเมื่อรถวิ่งไม่อัปเดตตำแหน่งเกิน (ชม.)</label><input id="s-pos" name="posStaleHours" inputmode="decimal" value="${esc(s.posStaleHours)}"></div>
+        <div class="field"><label for="s-nb">แจ้งทะเบียนรถเข้าโรงงานภายใน</label><input id="s-nb" name="notifyBy" type="time" value="${esc(notifyByTime())}"><span class="hint">ของวันก่อนวันโหลด (เฮีย: ประมาณบ่ายสอง) ไม่แจ้งระบบเด้งเตือน</span></div>
         <div class="field"><label for="s-hub">ฮับกระจายถึงลูกค้าไม่เกิน (วัน)</label><input id="s-hub" name="hubDays" inputmode="numeric" value="${esc(s.hubDays)}"><span class="hint">ใช้ตั้งกำหนดส่งพัสดุเบ็ดเตล็ด และเตือนตอนจัดรถ</span></div>
       </div>
     </section>
@@ -2791,8 +3436,20 @@ PAGES.settings = () => {
       </div>
       <p class="small muted">เวลาตัดรอบรถมีงาน Backhaul ตั้งที่แต่ละจุดเช็คอิน (ข้อมูลหลัก → จุดเช็คอิน / สาขา) คลังสาย 3 = 10:00 น.</p>
     </section>
+    <section class="card pad stack"><div class="sec-h"><h2>งานเหมา / ใบเสนอราคา</h2>${src(false)}</div>
+      <p class="small muted">ราคาเสนอ = (ค่าน้ำมัน + ทางด่วน + เบี้ยเลี้ยง + อื่นๆ) × (1 + กำไร%) ปัดขึ้นหลักร้อย · ค่าน้ำมัน = ระยะทาง ÷ อัตรามาตรฐาน × ราคาน้ำมัน · แก้ราคาเองได้ทุกใบ</p>
+      <div class="grid3">
+        <div class="field"><label for="s-fp">ราคาน้ำมันดีเซล (บาท/ลิตร)</label><input id="s-fp" name="fuelPrice" inputmode="decimal" value="${esc(s.fuelPrice)}"></div>
+        <div class="field"><label for="s-qm">กำไรที่บวก (%)</label><input id="s-qm" name="quoteMarginPct" inputmode="decimal" value="${esc(s.quoteMarginPct)}"></div>
+        <div class="field"><label for="s-rf">ตัวคูณระยะถนน (เมื่อคำนวณจากพิกัด)</label><input id="s-rf" name="roadFactor" inputmode="decimal" value="${esc(s.roadFactor)}"><span class="hint">ระยะเส้นตรง × ตัวคูณ ≈ ระยะถนน ใช้เมื่อไม่มี Standard KM</span></div>
+      </div>
+    </section>
     <button class="btn primary big" type="submit" ${dis()}>บันทึกค่าตั้งค่า</button>
-  </form>`;
+  </form>
+  <section class="card pad stack"><div class="sec-h"><h2>แจ้งเตือนเด้งบนเครื่องนี้</h2>${popupOn() ? chip('good', 'เปิดอยู่') : chip('', 'ปิดอยู่')}</div>
+    <p class="small muted">เด้งหน้าต่างเตือนเรื่องด่วน: เลยเวลาแจ้งทะเบียนโรงงาน งานสัญญาที่ต้องโหลดวันนี้ และรถที่ใช้หางสำรอง (ตั้งแยกแต่ละเครื่อง)</p>
+    <div class="rowflex"><button class="btn" data-act="popupToggle">${popupOn() ? 'ปิดการเด้งบนเครื่องนี้' : 'เปิดการเด้งบนเครื่องนี้'}</button></div>
+  </section>`;
 };
 
 /* ---------- more / spec / pending ---------- */
@@ -2801,7 +3458,7 @@ PAGES.more = () => `
   <section class="card pad stack">
     <h2>การใช้งาน</h2>
     <div class="rowflex">${S.demo ? `<button class="btn" data-act="demoOff">ใช้ข้อมูลจริง</button><button class="btn" data-act="demoReset">รีเซ็ตข้อมูลทดลอง</button>` : `<button class="btn" data-act="demoOn">เปิดโหมดทดลอง</button>`}<button class="btn" data-act="role" data-v="driver">ดูแบบคนขับ</button><button class="btn" data-act="copyLink" data-v="checkin">${icon('copy')}คัดลอกลิงก์เช็คอินให้คนขับ</button></div>
-    <p class="small muted">${S.backend === 'db' ? 'ข้อมูลจริงเก็บบนระบบของลิงก์นี้ ทุกเครื่องที่เปิดลิงก์เห็นข้อมูลเดียวกันทันที' : 'เปิดไฟล์นอก Claude: ข้อมูลจริงเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น'} · แบบร่าง V2</p>
+    <p class="small muted">${S.backend === 'db' ? 'ข้อมูลจริงเก็บบนระบบของลิงก์นี้ ทุกเครื่องที่เปิดลิงก์เห็นข้อมูลเดียวกันทันที' : 'เปิดไฟล์นอก Claude: ข้อมูลจริงเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น'} · แบบร่าง V3</p>
   </section>`;
 
 PAGES.spec = () => `
@@ -2843,21 +3500,30 @@ PAGES.pending = () => {
   const pumpPinned = pump && pump.lat !== null && pump.lat !== undefined;
   const s3 = Object.values(d.sites || {}).find(s => s.kind === 'base');
   const s3Pinned = s3 && s3.lat !== null && s3.lat !== undefined;
+  const dp = Object.values(d.sites || {}).find(x => normName(x.name) === normName('Dairy Plus นครสวรรค์'));
+  const dpPinned = dp && dp.lat !== null && dp.lat !== undefined;
+  const dupTrailers = Object.values(d.vehicles || {}).some(v => v.trailerPlate && Object.values(d.vehicles).some(o => o.id !== v.id && o.trailerPlate === v.trailerPlate));
+  const partnerVs = Object.values(d.vehicles || {}).filter(v => v.ownership === 'Partner').length;
   return `
   <section class="sec"><div class="sec-h"><h2>ไฟล์และข้อมูลที่รอจากเฮีย</h2><span class="sub">สถานะจากข้อมูลจริงในระบบ</span></div>
     <div class="list">
-      ${item(has('vehicles') ? 'part' : 'chase', 'ทะเบียนหัว + ทะเบียนหาง + ประเภทหาง + ประเภทรถ + สาย + น้ำหนักรถเปล่า', has('vehicles') ? `มีแล้ว ${has('vehicles')} คัน` : 'เฮียสั่งให้ทวง · 18/22 ล้อใช้ทะเบียนหัวเป็นหลัก 10 ล้อใช้ทะเบียนรถ')}
+      ${item(has('vehicles') ? 'part' : 'chase', 'ทะเบียนหัว + ทะเบียนหาง + ประเภทหาง + ประเภทรถ + ฐาน', has('vehicles') ? `มีแล้ว ${has('vehicles')} คัน` : 'เฮียสั่งให้ทวง')}
+      ${item(dupTrailers ? 'chase' : 'done', 'เคลียร์หางซ้ำ', dupTrailers ? 'หาง 62-8056 อยู่กับ 63-5501 และ 63-6979 · หาง 62-8162 อยู่กับ 63-5504, 68-4616, 68-4617 คันไหนถูก' : 'ไม่มีหางซ้ำแล้ว')}
+      ${item('chase', 'ไฟล์ต้นทุนวิ่งรถแต่ละคัน', 'เฮียบอกว่าจะส่งให้ ใช้คิดต้นทุนต่อกิโลรายคันและราคางานเหมา')}
+      ${item(partnerVs ? 'part' : 'chase', 'ทะเบียนรถ Partner แต่ละจังหวัด (ภูเก็ต ตรัง สงขลา ยะลา)', partnerVs ? `มีแล้ว ${partnerVs} คัน` : 'ต้องมีก่อน ระบบถึงจะเลือกรถ Partner ให้งานจังหวัด Partner ได้ (ตอนนี้ต้องติ๊กยืนยันใช้รถบริษัท)')}
       ${item(pumpPinned ? 'done' : 'chase', 'พิกัดปั๊มนครสวรรค์ (จุดเช็คอินสายเหนือ)', pumpPinned ? 'ปักหมุดแล้ว' : 'เฮียบอกว่าจะส่งให้')}
-      ${item(s3Pinned ? 'done' : 'wait', 'พิกัดคลังพุทธมณฑลสาย 3', s3Pinned ? 'ปักหมุดแล้ว' : 'ปักหมุดเองได้ที่ ข้อมูลหลัก → จุดเช็คอิน / สาขา')}
+      ${item(s3Pinned ? 'done' : 'wait', 'พิกัดคลังพุทธมณฑลสาย 3', s3Pinned ? 'ปักหมุดแล้ว' : 'ปักหมุดเองได้ที่ ข้อมูลหลัก → สถานที่')}
+      ${item(dpPinned ? 'done' : 'wait', 'พิกัดโรงงาน Dairy Plus นครสวรรค์', dpPinned ? 'ปักหมุดแล้ว (อ.พยุหะคีรี จ.นครสวรรค์)' : '')}
       ${item(has('drivers') ? 'part' : 'wait', 'รายชื่อคนขับ + เบอร์โทร', has('drivers') ? `มีแล้ว ${has('drivers')} คน` : '')}
+      ${item('wait', 'Standard KM ของแต่ละขา + ค่าทางด่วน', 'ใช้คำนวณน้ำมันที่ให้ต่อรูท (Standard KM ÷ 4 หรือ 4.8 กม./ลิตร)')}
       ${item('wait', 'อัตราเบี้ยเลี้ยง', 'ต่อขา ต่อวัน หรือต่อเที่ยว')}
-      ${item('wait', 'ค่าน้ำมัน / ข้อมูล Feed Card', 'ใช้เทียบ กม./ลิตร จริงกับมาตรฐาน')}
+      ${item('wait', 'ราคาน้ำมัน และสูตรคิดราคางานเหมา', 'ตอนนี้ใช้ค่าร่าง ดีเซล 32 บาท/ลิตร บวกกำไร 20% แก้ได้ที่ ค่าตั้งค่า')}
+      ${item('wait', 'ข้อมูล Feed Card', 'ใช้เทียบลิตรที่คีย์กับลิตรที่ควรให้ตาม Standard KM')}
       ${item('wait', 'ไฟล์ Order ของ Dairy Plus (ตัวอย่าง)', 'นมเหมาคัน นมร้านค้า ชื่อเรียกหน้างาน และจำนวนคันต่อปลายทาง')}
-      ${item('wait', 'อัตราค่าขนส่งพัสดุรายบิล (ขนม / เบ็ดเตล็ด)', 'ต่อกิโล ต่อกล่อง หรือตามจังหวัด ตอนนี้กรอกเองทีละบิล')}
-      ${item('wait', 'Standard KM ของแต่ละขา', 'เช่น นครสวรรค์ → สาย 3 (เฮียยกตัวอย่างประมาณ 200 กม.), ขากลับสมุทรสาคร ปทุมธานี วังน้อย')}
-      ${item('wait', 'Capacity รถ: น้ำหนัก ปริมาตร พาเลท', 'ใช้ตรวจความจุตอนจับคู่รถกับงาน')}
-      ${item('wait', 'ค่าทางด่วน, ราคาค่าขนส่ง และ Minimum Revenue ปล่อยรถ', '')}
-      ${item('wait', 'ข้อมูล Maintenance ปัจจุบัน', 'เลขไมล์ล่าสุด และไมล์เข้าศูนย์ครั้งล่าสุดของแต่ละคัน')}
+      ${item('wait', 'อัตราค่าขนส่งพัสดุรายบิล (ขนม / เบ็ดเตล็ด)', 'ต่อกิโล ต่อกล่อง หรือตามจังหวัด ตอนนี้แคชเชียร์ใช้ค่าส่งที่กรอกตอนรับ')}
+      ${item('wait', 'ราคาค่าขนส่งลูกค้า และ Minimum Revenue ปล่อยรถ', '')}
+      ${item('wait', 'น้ำหนักรถเปล่า (หัว + หาง) แต่ละคัน', 'ใช้ตรวจน้ำหนักรวมตามกฎหมาย')}
+      ${item('wait', 'เลขไมล์ปัจจุบัน และไมล์เข้าศูนย์ครั้งล่าสุด', 'ใช้เตือน Maintenance ทุก 20,000 กม.')}
     </div></section>
   <section class="sec"><h2>เรื่องที่เฮียยืนยันแล้ว</h2>
     <div class="card pad doc"><ol>
@@ -2879,14 +3545,24 @@ PAGES.pending = () => {
       <li><b>สถานที่:</b> โรงงาน ลูกค้า เดโป และอู่ 34 จุด พร้อมพิกัดและลิงก์ Google Maps · คนขับกด "นำทาง" จากทริปได้ · SC สแตนดาร์ดแคนอยู่บางพลี</li>
       <li><b>ฐานหลักของรถ:</b> รถทุกคันวิ่งได้ทุกสาย แต่มีฐานหลักเหนือหรือใต้ (งานหลักอยู่ภาคใต้) ตอนจัดรถระบบเรียงรถฐานเดียวกันก่อน รถต่างฐานขึ้นเป็น "มาเสริม"</li>
       <li><b>GPS ติดรถ:</b> รถบรรทุกใช้เทเลเทค รถเล็กใช้ Forth Tracking · การต่อ API พักไว้ก่อน ใช้คนขับกดส่งจากมือถือ (คัดลอกหน้า "ตำแหน่งปัจจุบัน" ของเทเลเทคมาวางได้ถ้าต้องการ)</li>
+      <li><b>สถานที่:</b> งานลำปาง (ส่งกระป๋อง SC / รับกาแฟกระป๋อง) = Nrt เนเจอรี่ลำปาง · โรงงาน Dairy Plus นครสวรรค์อยู่ อ.พยุหะคีรี</li>
+      <li><b>รถทุกคัน:</b> หน้าเดียวเห็นว่าแต่ละคันวิ่งงานอะไร ไปจังหวัดไหน อยู่ที่ไหน และเตือน Maintenance</li>
+      <li><b>น้ำมัน:</b> แต่ละรูทให้น้ำมัน = Standard KM ÷ อัตรามาตรฐาน · ระบบหลักคือ Feed Card ทุกทริปต้องติ๊กว่าคีย์ Feed Card แล้ว</li>
+      <li><b>สายใต้:</b> รถส่วนใหญ่วิ่งจังหวัดเดียว ไม่เต็มคันควบจังหวัดถัดไปตามทาง (ชุมพร → สุราษฎร์ → นครศรีฯ) · Backhaul ใต้ (ไม้ ทลายปาล์ม) คนขับเช็คอินที่จุดรับ ถ่ายรูปใบชั่ง ระบุปลายทาง</li>
+      <li><b>งานสัญญา (นม ขนม):</b> เตือนล่วงหน้า 1 วันถ้าของยังอยู่สาย 3 ยังไม่ได้โหลด</li>
+      <li><b>นมเหมาคัน Dairy Plus:</b> ต้องกำหนดเวลาถึงปลายทางก่อนปล่อยรถ (เช่น เดโปพิษณุโลก)</li>
+      <li><b>จังหวัด Partner:</b> พัสดุ ขนม เบ็ดเตล็ด นมร้านค้า ไปจังหวัด Partner ต้องใช้ทะเบียนรถ Partner</li>
+      <li><b>คนขับและหาง:</b> ต้องระบุชื่อคนขับและทะเบียนหางทุกทริป หัวแต่ละคันมีหางประจำ เปลี่ยนหางประจำต้องแจ้ง ใช้หางที่ไม่ใช่หางประจำ ระบบเตือนทันที (หางสำรอง)</li>
+      <li><b>แจ้งทะเบียนโรงงาน:</b> ภายในประมาณ 14:00 น. ไม่แจ้งระบบเด้งเตือน</li>
+      <li><b>หน้าร้าน:</b> Checker รับของ (ผู้ส่ง ผู้รับ ที่อยู่ สินค้า จำนวน ราคา) ออกลาเบล แคชเชียร์ยิงลาเบลคิดเงินและเงินทอน</li>
+      <li><b>งานเหมา:</b> ลูกค้ากำหนดจุดรับ-จุดส่ง ทำใบเสนอราคาให้ลูกค้า</li>
     </ol></div></section>
   <section class="sec"><h2>เรื่องที่ยังต้องถาม</h2>
     <div class="card pad doc"><ol>
-      <li>พิกัดโรงงาน Dairy Plus นครสวรรค์ (จุดโหลดนม) ยังไม่มีในรายการสถานที่</li>
-      <li>งานลำปาง (ส่งกระป๋อง SC / รับกาแฟกระป๋อง) ใช่ที่ Nrt เนเจอรี่ลำปางไหม ตอนนี้ระบบชี้ไปที่นั่น</li>
-      <li>แจ้งทะเบียนโรงงานผ่านช่องทางไหน (กลุ่ม LINE / อีเมล / โทร) จะได้ทำข้อความให้ตรงรูปแบบ</li>
-      <li>น้ำหนักรถเปล่า (หัว + หาง) ของแต่ละคัน ส่งมาพร้อมไฟล์ทะเบียนได้ไหม</li>
-      <li>ไฟล์รถ 24/9/69: หาง 62-8056 อยู่กับรถ 63-5501 และ 63-6979 · หาง 62-8162 อยู่กับรถ 63-5504, 68-4616, 68-4617 คันไหนถูก</li>
+      <li>แจ้งทะเบียนโรงงานภายใน 14:00 น. คือของ "วันก่อนวันโหลด" ใช่ไหม (ตอนนี้ระบบตั้งแบบนี้) และแจ้งผ่านช่องทางไหน (LINE / อีเมล / โทร)</li>
+      <li>ราคางานเหมา: ใช้ราคาน้ำมันเท่าไหร่ บวกกำไรกี่ % คิดรถเปล่าขากลับไหม</li>
+      <li>หางซ้ำในไฟล์รถ 24/9/69: หาง 62-8056 (63-5501 / 63-6979) · หาง 62-8162 (63-5504 / 68-4616 / 68-4617) คันไหนถูก</li>
+      <li>น้ำหนักรถเปล่า (หัว + หาง) ของแต่ละคัน ส่งมาพร้อมไฟล์ต้นทุนได้ไหม</li>
     </ol></div></section>
   <section class="sec"><h2>ระบบอื่นที่จะทำต่อ</h2>
     <div class="card pad doc"><ul>
@@ -2897,6 +3573,38 @@ PAGES.pending = () => {
       <li>สแกนลาเบลด้วยกล้องมือถือ ถ่ายรูปผู้รับ และแจ้งลูกค้าทาง LINE (ต้องย้ายขึ้นเว็บบริษัท)</li>
     </ul></div></section>`;
 };
+
+/* ================= urgent popup (dispatch): factory plate deadline, contract cargo to load today, spare trailers ================= */
+function urgentItems() {
+  const out = [];
+  Object.values(S.d.trips).forEach(t => {
+    const pl = (vehicleOf(t.vehicleId) || {}).plate || '-';
+    const ns = notifyState(t);
+    if (ns && (ns.st === 'crit' || ns.st === 'serious')) out.push({ key: `nf-${t.id}-${ns.st}`, st: ns.st, text: `${pl} ทริป ${t.no} (${tripOrigin(t)}): ${ns.text}`, href: '#trips' });
+    if ((t.status === 'planned' || t.status === 'running') && t.spareTrailer) out.push({ key: 'sp-' + t.id, st: 'serious', text: `${pl} ทริป ${t.no} ใช้หางสำรอง ${t.spareTrailer.plate} แทนหางประจำ ${t.spareTrailer.regular || '-'}`, href: '#trip-' + t.id });
+  });
+  Object.values(S.d.checkins).filter(c => c.status === 'waiting' && c.spareTrailer).forEach(c => out.push({ key: 'spc-' + c.id, st: 'serious', text: `${(vehicleOf(c.vehicleId) || {}).plate || '-'} เช็คอินมาพร้อมหางสำรอง ${c.trailerPlate}`, href: '#queue' }));
+  const c3 = atSai3().filter(x => x.st === 'crit');
+  if (c3.length > 3) out.push({ key: `c3-${dayKey()}-${c3.length}`, st: 'crit', text: `งานสัญญายังอยู่คลังสาย 3 ต้องโหลดวันนี้ ${c3.length} รายการ: ${c3.slice(0, 3).map(x => x.name).join(', ')} …`, href: '#dispatch' });
+  else c3.forEach(x => out.push({ key: `c3-${x.type}-${x.id}-${dayKey()}`, st: 'crit', text: `งานสัญญายังอยู่คลังสาย 3 ต้องโหลดวันนี้: ${x.name}`, href: '#dispatch' }));
+  return out.sort((a, b) => (a.st === 'crit' ? 0 : 1) - (b.st === 'crit' ? 0 : 1));
+}
+const ss = { get(k, d) { try { const v = sessionStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } }, set(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+const popupOn = () => ls.get('ssc-popup', 'on') !== 'off';
+let URGENT = [];
+let urgentRetry = null;
+function checkUrgent() {
+  if (!S.loaded || role === 'driver' || !popupOn()) return;
+  if (!$('#sheet').hidden || formDirty) { clearTimeout(urgentRetry); urgentRetry = setTimeout(checkUrgent, 8000); return; } // busy: try again shortly
+  const seen = new Set(ss.get('ssc-urgent-seen', []));
+  const items = urgentItems().filter(x => !seen.has(x.key)); if (!items.length) return;
+  URGENT = items; markUrgentSeen(); // shown once per item and level on this device session
+  openSheet({ title: `แจ้งเตือนด่วน ${items.length} เรื่อง`, submit: 'รับทราบ', onSubmit: () => {},
+    body: `<div class="list">${items.map(x => `<div class="row" style="align-items:center">${chip(x.st, x.st === 'crit' ? 'ด่วน' : 'สำคัญ')}<div class="main"><div class="l1 meta">${esc(x.text)}</div></div><button type="button" class="btn sm" data-act="urgentGo" data-v="${esc(x.href)}">ไปดู</button></div>`).join('')}</div>
+      <p class="small muted">ขึ้นเตือนเมื่อมีเรื่องใหม่ (เช่น ต้องแจ้งทะเบียนโรงงานก่อน ${esc(notifyByTime())} น.) ปิดการเด้งบนเครื่องนี้ได้ที่ ค่าตั้งค่า</p>` });
+}
+function markUrgentSeen() { const seen = new Set(ss.get('ssc-urgent-seen', [])); URGENT.forEach(x => seen.add(x.key)); ss.set('ssc-urgent-seen', [...seen].slice(-300)); }
+setInterval(checkUrgent, 60000);
 
 /* ================= sheet, toast ================= */
 let sheetHandler = null, lastFocus = null;
@@ -2915,6 +3623,7 @@ function openSheet({ title, body, submit = 'บันทึก', onSubmit, dange
   setTimeout(() => (first || root.querySelector('button[type=submit]')).focus(), 30);
 }
 function closeSheet() { const root = $('#sheet'); root.hidden = true; root.innerHTML = ''; sheetHandler = null; document.body.style.overflow = ''; if (lastFocus && document.contains(lastFocus)) lastFocus.focus(); if (deferred) { deferred = false; render(); } }
+function okSheet(title, text, label, fn) { openSheet({ title, body: `<p class="meta">${text}</p>`, submit: label, onSubmit: async () => { await fn(); } }); }
 function confirmSheet(title, text, label, fn) { openSheet({ title, body: `<p class="meta">${text}</p>`, submit: label, danger: true, onSubmit: async () => { await fn(); } }); }
 let toastTimer = null;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3200); }
@@ -2935,8 +3644,14 @@ const ACT = {
   copyLink: el => copy(linkFor(el.dataset.v)),
   copyText: el => copy(el.dataset.v),
   homeLine: el => { ui.home.line = el.dataset.v; render({ force: true }); },
+  urgentGo: el => { location.hash = el.dataset.v; },
+  popupToggle: () => { ls.set('ssc-popup', popupOn() ? 'off' : 'on'); render({ force: true }); toast(popupOn() ? 'เปิดการเด้งแจ้งเตือนด่วนบนเครื่องนี้แล้ว' : 'ปิดการเด้งแจ้งเตือนบนเครื่องนี้แล้ว'); if (popupOn()) checkUrgent(); },
   homeAllAtt: () => { ui.home.allAtt = !ui.home.allAtt; render({ force: true }); },
+  fleetF: el => { ui.fleet.f = ui.fleet.f === el.dataset.v && el.classList.contains('stat') ? 'all' : el.dataset.v; render({ force: true }); },
+  fleetLine: el => { ui.fleet.line = el.dataset.v; render({ force: true }); },
+  fleetDispatch: el => { const v = S.d.vehicles[el.dataset.id]; if (!v) return; const w = Object.values(S.d.checkins).filter(c => c.status === 'waiting' && c.vehicleId === v.id).sort(queueCmp)[0]; ui.dp.line = v.line || 'all'; ui.dp.vehicleId = v.id; ui.dp.driverId = (w && w.driverId) || (S.d.drivers[v.driverId] ? v.driverId : ''); ui.dp.trailerPlate = (w && w.trailerPlate) || ''; location.hash = '#dispatch'; },
   posGps: el => { const t = S.d.trips[el.dataset.id]; if (t) posGps(t); },
+  feedKey: el => { const t = S.d.trips[el.dataset.id]; if (t) openFeed(t); },
   stopArrive: async el => {
     const id = el.dataset.id, k = el.dataset.k; if (!S.d.trips[id]) return;
     el.disabled = true; toast('กำลังบันทึกเวลาถึง และอ่านตำแหน่ง GPS…');
@@ -2950,6 +3665,7 @@ const ACT = {
   gpsImport: () => openGpsImport(),
   gpsSample: () => { const ta = $('#gps-in'); if (ta) { ta.value = gpsSampleText(); gpsPreview(); } },
   podOpen: el => { const t = S.d.trips[el.dataset.id]; if (t) openPod(t, el.dataset.k); },
+  pickupOpen: el => { const t = S.d.trips[el.dataset.id]; if (t) openPickup(t); },
   sigClear: () => clearSig(),
   stopUndo: el => {
     const t = S.d.trips[el.dataset.id]; const k = el.dataset.k; if (!t || !(t.arr || {})[k]) return;
@@ -2974,6 +3690,28 @@ const ACT = {
   parcelCancel: el => { const p = S.d.parcels[el.dataset.id]; if (!p) return; confirmSheet('ยกเลิกพัสดุ', `ยกเลิกพัสดุ ${esc(p.no)}? ลาเบลเลขนี้จะยิงไม่ผ่าน`, 'ยกเลิกพัสดุ', async () => { await patch('parcels', p.id, { status: 'cancel', tripId: null, events: [...(p.events || []), { s: 'cancel', at: new Date().toISOString() }] }); toast('ยกเลิกแล้ว'); }); },
   parcelDeliver: el => { const p = S.d.parcels[el.dataset.id]; if (!p) return; openSheet({ title: 'บันทึกส่งสำเร็จ ' + p.no, body: `<div class="field"><label for="pd-name">ชื่อคนรับของ</label><input id="pd-name" name="podName" value="${esc(p.receiverName || '')}"></div>${p.payer === 'cod' ? `<label class="rowflex note warn"><input type="checkbox" name="codOk"> เก็บค่าขนส่งปลายทาง ${money(num(p.fee))} แล้ว</label>` : ''}`, submit: 'บันทึกส่งสำเร็จ', onSubmit: async fd => { if (!String(fd.podName || '').trim()) return 'กรอกชื่อคนรับของ'; await deliverParcel(p, fd.podName.trim(), fd.codOk === 'on'); toast('บันทึกส่งสำเร็จแล้ว'); } }); },
   parcelCod: el => { const p = S.d.parcels[el.dataset.id]; if (!p) return; confirmSheet('เก็บค่าส่งปลายทาง', `ยืนยันว่าเก็บค่าขนส่ง ${money(num(p.fee))} ของ ${esc(p.no)} แล้ว`, 'ยืนยัน', async () => { const now = new Date().toISOString(); await patch('parcels', p.id, { codCollected: true, codAt: now, events: [...(p.events || []), { s: 'cod', at: now, note: money(num(p.fee)) }] }); toast('บันทึกแล้ว'); }); },
+  quoteNew: () => openQuote(null),
+  quoteEdit: el => openQuote(el.dataset.id),
+  quotePdf: el => { const q = S.d.quotes[el.dataset.id]; if (q) quotePdf(q); },
+  quoteStatus: async el => { const q = S.d.quotes[el.dataset.id]; if (!q) return; try { await patch('quotes', q.id, { status: el.dataset.v, [el.dataset.v + 'At']: new Date().toISOString() }); } catch { return; } toast(el.dataset.v === 'sent' ? 'บันทึกว่าส่งลูกค้าแล้ว' : 'บันทึกว่าไม่ได้งาน'); },
+  quoteWin: el => { const q = S.d.quotes[el.dataset.id]; if (!q) return; okSheet('ลูกค้าตกลงราคา', `สร้างออเดอร์งานเหมา ${esc(q.customer)}: ${esc(q.pickup ? q.pickup.name : '')} → ${esc(q.drop ? q.drop.name : '')} ราคา ${money(num(q.price))} แล้วไปจัดรถต่อ${(q.pickup && q.pickup.lat !== null && !siteFor(q.pickup.name)) || (q.drop && q.drop.lat !== null && !siteFor(q.drop.name)) ? ' (บันทึกจุดรับ-ส่งที่มีพิกัดเป็นสถานที่ให้คนขับกดนำทางได้)' : ''}`, 'สร้างออเดอร์', async () => { await quoteToOrder(q); }); },
+  quoteStatusTab: el => { ui.quotes.status = el.dataset.v; render({ force: true }); },
+  cashAddId: el => { const e = cashAdd(S.d.parcels[el.dataset.id]); ui.cash.err = e; render({ force: true }); },
+  cashRemove: el => { ui.cash.cart = ui.cash.cart.filter(id => id !== el.dataset.id); render({ force: true }); },
+  cashClear: () => { ui.cash.cart = []; ui.cash.cash = ''; ui.cash.err = ''; render({ force: true }); },
+  cashMethod: el => { ui.cash.method = el.dataset.v; render({ force: true }); },
+  cashQuick: el => { const { due } = cashTotals(); const v = el.dataset.v === 'exact' ? due : (num(ui.cash.cash) || 0) + num(el.dataset.v); ui.cash.cash = String(v); const i = $('#cash-recv'); if (i) i.value = ui.cash.cash; updateChange(); },
+  cashPay: async () => {
+    const c = ui.cash; const { ps, due } = cashTotals(); if (!due) return;
+    const got = c.method === 'cash' ? num(c.cash) : due;
+    if (c.method === 'cash' && (got === null || got < due)) { toast(got === null ? 'กรอกเงินที่รับมา' : `เงินยังขาด ${money(due - got)}`); return; }
+    const at = new Date().toISOString(); const rcpt = 'R' + uid(); const change = c.method === 'cash' ? got - due : 0;
+    const pay = ps.filter(p => parcelDue(p) > 0);
+    try { for (const p of pay) await patch('parcels', p.id, { paid: { at, by: S.uid || null, method: c.method, amount: num(p.fee), rcpt, total: due, cash: got, change }, events: [...(p.events || []), { s: 'paid', at, note: money(num(p.fee)) + (c.method === 'transfer' ? ' โอน' : ' เงินสด') }] }); } catch { return; }
+    c.last = { n: pay.length, total: due, cash: got, change, method: c.method, at }; c.cart = []; c.cash = ''; c.err = '';
+    toast(c.method === 'cash' ? `รับชำระ ${money(due)} ทอน ${money(change)}` : `รับโอน ${money(due)} แล้ว`); render({ force: true });
+  },
+  cashForParcel: el => { const p = S.d.parcels[el.dataset.id]; if (!p) return; cashAdd(p); location.hash = '#cashier'; },
   scanMode: el => { ui.scan.mode = el.dataset.v; ui.scan.pending = null; render({ force: true }); setTimeout(() => { const i = $('#scan-in'); if (i && !i.disabled) i.focus(); }, 120); },
   scanClear: () => { ui.scan.log = []; render({ force: true }); },
   scanCancelPending: () => { ui.scan.pending = null; render({ force: true }); },
@@ -2981,8 +3719,13 @@ const ACT = {
   scanForTrip: el => { ui.scan.mode = 'loaded'; ui.scan.tripId = el.dataset.id; ui.scan.pending = null; location.hash = '#scan'; },
   dpLine: el => { const L = el.dataset.v; ui.dp.line = L; ui.dp.routeId = ''; ui.dp.err = ''; if (L !== 'all') { Object.keys(ui.dp.sel).forEach(id => { const o = S.d.orders[id]; if (!o || orderLine(o) !== L) delete ui.dp.sel[id]; }); if (L === 'north') ui.dp.psel = {}; } render({ force: true }); },
   dpSel: el => { if (el.checked) ui.dp.sel[el.dataset.id] = true; else delete ui.dp.sel[el.dataset.id]; ui.dp.err = ''; render({ force: true }); },
+  dpHubs: el => {
+    const keys = String(el.dataset.v || '').split(',').filter(Boolean); const hgs = hubGroups().filter(h => keys.includes(h.key));
+    ui.dp.sel = {}; ui.dp.psel = {}; hgs.forEach(h => { h.orders.forEach(id => (ui.dp.sel[id] = true)); h.pkeys.forEach(k => (ui.dp.psel[k] = true)); });
+    ui.dp.err = ''; ui.dp.routeId = ''; render({ force: true }); toast(`เลือกงาน ${hgs.map(h => h.name).join(' + ')} แล้ว`);
+  },
   dpPsel: el => { if (el.checked) ui.dp.psel[el.dataset.id] = true; else delete ui.dp.psel[el.dataset.id]; ui.dp.err = ''; render({ force: true }); },
-  dpVeh: el => { const id = el.dataset.id; if (ui.dp.vehicleId === id) return; ui.dp.vehicleId = id; const w = Object.values(S.d.checkins).filter(c => c.status === 'waiting' && c.vehicleId === id).sort(queueCmp)[0]; ui.dp.driverId = (w && w.driverId) || (S.d.vehicles[id] && S.d.drivers[S.d.vehicles[id].driverId] ? S.d.vehicles[id].driverId : ''); ui.dp.trailerPlate = (w && w.trailerPlate) || ''; ui.dp.confirmOver = false; ui.dp.err = ''; render({ force: true }); },
+  dpVeh: el => { const id = el.dataset.id; if (ui.dp.vehicleId === id) return; ui.dp.vehicleId = id; const w = Object.values(S.d.checkins).filter(c => c.status === 'waiting' && c.vehicleId === id).sort(queueCmp)[0]; ui.dp.driverId = (w && w.driverId) || (S.d.vehicles[id] && S.d.drivers[S.d.vehicles[id].driverId] ? S.d.vehicles[id].driverId : ''); ui.dp.trailerPlate = (w && w.trailerPlate) || ''; ui.dp.spareReason = ''; ui.dp.partnerOk = false; ui.dp.partnerReason = ''; ui.dp.confirmOver = false; ui.dp.err = ''; render({ force: true }); },
   createTrip: () => createTrip(),
   tripTab: el => { ui.trips.tab = el.dataset.v; render({ force: true }); },
   tripCancel: el => { const t = S.d.trips[el.dataset.id]; if (!t) return; confirmSheet('ยกเลิกทริป', `ยกเลิกทริป ${esc(t.no)}? ออเดอร์และพัสดุจะกลับไปรอจัดรถ และรถกลับเข้าคิวที่ลำดับเดิม`, 'ยกเลิกทริป', async () => {
@@ -3061,6 +3804,14 @@ const ACT = {
   } }); },
 };
 const FORMS = {
+  cashScan: async () => {
+    const raw = ui.cash.code; ui.cash.code = ''; const inp = $('#cash-in'); if (inp) inp.value = '';
+    const m = parseCode(raw); ui.cash.err = '';
+    if (!String(raw || '').trim()) return;
+    if (!m) { ui.cash.err = 'รูปแบบเลขไม่ถูกต้อง (S + 10 หลัก)'; beep(false); }
+    else { const e = cashAdd(pidx().byNo[m.no]); if (e) { ui.cash.err = e; beep(false); } else beep(true); }
+    render({ force: true }); setTimeout(() => { const i = $('#cash-in'); if (i) i.focus(); }, 60);
+  },
   checkin: () => submitCheckin(),
   receive: () => submitReceive(),
   scan: async () => { const code = ui.scan.code; ui.scan.code = ''; const inp = $('#scan-in'); if (inp) inp.value = ''; scanChain = scanChain.then(() => processScan(code)).catch(() => {}); await scanChain; },
@@ -3123,6 +3874,8 @@ const FORMS = {
     const o = { serviceIntervalKm: n('serviceIntervalKm', s.serviceIntervalKm), warnKm: n('warnKm', s.warnKm), dueKm: n('dueKm', s.dueKm), partnerSharePct: n('partnerSharePct', s.partnerSharePct), defaultRadiusM: n('defaultRadiusM', s.defaultRadiusM), staleHours: n('staleHours', s.staleHours), fuelStd: {}, minRevenue: {} };
     o.maxPayloadKg = {}; o.legalGrossKg = {}; o.bufferHours = n('bufferHours', s.bufferHours); o.hubDays = n('hubDays', s.hubDays); o.posStaleHours = n('posStaleHours', s.posStaleHours);
     o.timeMatchAt = String(fd.timeMatchAt || '').trim() || s.timeMatchAt; o.southArriveBy = /^\d{2}:\d{2}$/.test(fd.southArriveBy || '') ? fd.southArriveBy : s.southArriveBy;
+    o.notifyBy = /^\d{2}:\d{2}$/.test(fd.notifyBy || '') ? fd.notifyBy : notifyByTime(); o.fuelPrice = n('fuelPrice', s.fuelPrice); o.quoteMarginPct = n('quoteMarginPct', s.quoteMarginPct); o.roadFactor = n('roadFactor', s.roadFactor);
+    if (o.fuelPrice <= 0 || o.roadFactor < 1 || o.roadFactor > 3) return 'ราคาน้ำมันต้องมากกว่า 0 และตัวคูณระยะถนนอยู่ระหว่าง 1 ถึง 3';
     VTYPES.forEach(t => { o.fuelStd[t] = n('fuel_' + t, s.fuelStd[t]); o.minRevenue[t] = num(fd['min_' + t]); o.maxPayloadKg[t] = n('pay_' + t, s.maxPayloadKg[t]); o.legalGrossKg[t] = n('gross_' + t, s.legalGrossKg[t]); });
     if (VTYPES.some(t => o.maxPayloadKg[t] >= o.legalGrossKg[t])) return 'น้ำหนักสินค้าสูงสุดต้องน้อยกว่าน้ำหนักรวมตามกฎหมาย';
     if (o.serviceIntervalKm <= 0) return 'รอบเข้าศูนย์ต้องมากกว่า 0';
@@ -3157,13 +3910,14 @@ function onBind(e) {
     updateLocOut(); return;
   }
   if (path === 'rcv.province') ui.rcv.branchId = suggestBranch(val);
+  if (path === 'cash.cash') { updateChange(); return; }
   if (path === 'rcv.category') { if (val === 'ขนม') { if (!ui.rcv.senderName.trim()) ui.rcv.senderName = 'อาหารยอดคุณ'; ui.rcv.dueDate = ''; } else if (!ui.rcv.dueDate) ui.rcv.dueDate = addDays(dayKey(), settings().hubDays); }
   if (rr === 'all' || (e.type === 'change' && el.tagName === 'SELECT' && path.startsWith('ci.'))) { render({ force: true }); return; }
   if (rr === 'debounce') { clearTimeout(debTimer); debTimer = setTimeout(() => render({ force: true }), 350); }
 }
-function markDirty(e) { const t = e.target; if (t && t.dataset && !t.dataset.bind && t.closest && t.closest('#main form[data-form]')) formDirty = true; }
-document.addEventListener('input', e => { if (e.target && e.target.id === 'gps-in') { gpsPreview(); return; } markDirty(e); if (e.target.dataset && e.target.dataset.imp) { updateImportPreview(e.target); return; } if (e.target.dataset && e.target.dataset.sort) { updateSortPreview(e.target); return; } if (e.target.type !== 'radio' && e.target.tagName !== 'SELECT') onBind(e); });
-document.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.pod) { podPick(e.target); return; } if (e.target.type === 'radio' || e.target.tagName === 'SELECT' || e.target.type === 'checkbox' || e.target.type === 'date') { if (e.target.dataset && e.target.dataset.act) return; onBind(e); } });
+function markDirty(e) { const t = e.target; if (t && t.dataset && !t.dataset.bind && t.type !== 'file' && t.closest && t.closest('#main form[data-form]')) formDirty = true; }
+document.addEventListener('input', e => { if (e.target && e.target.id === 'gps-in') { gpsPreview(); return; } if (e.target && e.target.closest && e.target.closest('[data-qform]')) { quotePreview(); return; } markDirty(e); if (e.target.dataset && e.target.dataset.imp) { updateImportPreview(e.target); return; } if (e.target.dataset && e.target.dataset.sort) { updateSortPreview(e.target); return; } if (e.target.type !== 'radio' && e.target.tagName !== 'SELECT') onBind(e); });
+document.addEventListener('change', e => { if (e.target && e.target.closest && e.target.closest('[data-qform]')) { quotePreview(); return; } if (e.target.dataset && e.target.dataset.pod) { podPick(e.target); return; } if (e.target.dataset && e.target.dataset.ciph) { pickPhoto(e.target, ui.ci.photos, e.target.dataset.ciph, 'ci', 'ถ่ายแล้ว · แตะเพื่อถ่ายใหม่'); return; } if (e.target.dataset && e.target.dataset.pk) { if (PK) pickPhoto(e.target, PK.photos, e.target.dataset.pk, 'pk'); return; } if (e.target.type === 'radio' || e.target.tagName === 'SELECT' || e.target.type === 'checkbox' || e.target.type === 'date') { if (e.target.dataset && e.target.dataset.act) return; onBind(e); } });
 document.addEventListener('paste', e => {
   if (!e.target || e.target.id !== 'gps-in' || !e.clipboardData) return;
   const html = e.clipboardData.getData('text/html'); if (!html) return;
@@ -3311,6 +4065,15 @@ function makeDemo() {
   const l2 = parcel(8, { seq: 2, day: yk, at: iso(now - 29 * 3600000), province: 'สุราษฎร์ธานี', branchId: 'br-srt', boxes: 3, weightKg: 36, fee: 330, payer: 'cod', dueDate: addDays(today, 2), tripId: 't20', status: 'received' }); l2.scans.loaded[1] = iso(now - 6 * 3600000);
   const a1 = parcel(9, { seq: 3, day: yk, at: iso(now - 50 * 3600000), province: 'ชุมพร', branchId: 'br-cpn', boxes: 1, weightKg: 9, fee: 120, payer: 'cod', dueDate: today, tripId: 't07', status: 'arrived', arrivedAt: iso(now - 20 * 3600000) }); full(a1, 'loaded', iso(now - 40 * 3600000)); full(a1, 'arrived', iso(now - 20 * 3600000)); a1.events.push({ s: 'loaded', at: iso(now - 40 * 3600000) }, { s: 'arrived', at: iso(now - 20 * 3600000), note: 'สาขาชุมพร' });
   const dv = parcel(10, { seq: 4, day: yk, at: iso(now - 52 * 3600000), province: 'ตรัง', branchId: 'br-trg', boxes: 2, weightKg: 18, fee: 200, dueDate: today, tripId: 't07', status: 'delivered', podName: 'ผู้รับตัวอย่าง 10', deliveredAt: iso(now - 8 * 3600000) }); full(dv, 'loaded', iso(now - 40 * 3600000)); full(dv, 'arrived', iso(now - 22 * 3600000)); dv.events.push({ s: 'loaded', at: iso(now - 40 * 3600000) }, { s: 'arrived', at: iso(now - 22 * 3600000) }, { s: 'delivered', at: iso(now - 8 * 3600000), note: 'ผู้รับตัวอย่าง 10' });
+  // V3 samples: Feed Card keyed on one running trip, a spare trailer, a late parcel, a paid counter bill, a quote
+  d.trips.t22.feed = { at: iso(now - 9.5 * 3600000), by: null, liters: 158, card: 'FC-ตย-04', note: '', plan: 158 };
+  d.trips.t21.trailerPlate = '70-9005'; d.trips.t21.spareTrailer = { plate: '70-9005', regular: d.vehicles.v05.trailerPlate, reason: 'หางประจำเปลี่ยนยาง (ตัวอย่าง)', at: iso(now - 3600000) };
+  d.trailers.tr2 = { id: 'tr2', trailerPlate: '70-9005', vehicleId: 'v05', driverId: 'd05', takenDate: today, kmTaken: d.vehicles.v05.currentKm, trips: d.trips.t21.no, note: 'หางประจำเปลี่ยนยาง (ตัวอย่าง)', status: 'out', auto: true };
+  d.checkins.c3.trailerPlate = '70-9003'; d.checkins.c3.spareTrailer = true;
+  parcel(11, { seq: 5, day: yk, at: iso(now - 54 * 3600000), province: 'ชุมพร', branchId: 'br-cpn', boxes: 1, weightKg: 6, fee: 90, receiverAddress: 'ต.ท่าตะเภา อ.เมืองชุมพร', description: 'อะไหล่ 1 กล่อง', dueDate: addDays(today, -1) });
+  d.parcels.p2.paid = { at: iso(now - 2 * 3600000), by: null, method: 'cash', amount: 120, rcpt: 'R-ตย', total: 120, cash: 200, change: 80 };
+  const qk = haversine({ lat: 9.1201, lng: 99.3307 }, d.sites.s3) / 1000 * DEFAULT_SETTINGS.roadFactor; const qkm = Math.round(qk); const ql = Math.ceil(qkm * 2 / 4); const qcost = ql * DEFAULT_SETTINGS.fuelPrice + 120 + 800;
+  d.quotes.q1 = { id: 'q1', no: `Q${today.slice(2, 4)}${today.slice(5, 7)}${today.slice(8, 10)}-01`, day: today, status: 'sent', customer: 'ลูกค้าตัวอย่าง (งานเหมาไม้แปรรูป)', phone: '0800000200', pickup: { name: 'ลานไม้ตัวอย่าง สุราษฎร์ธานี', lat: 9.1201, lng: 99.3307, mapsUrl: null }, drop: { name: 'คลังพุทธมณฑลสาย 3', lat: 13.7881, lng: 100.3163, siteId: 's3', mapsUrl: null }, date: addDays(today, 2), arriveAt: `${addDays(today, 3)}T08:00`, line: 'south', vtype: '18', cargo: 'ไม้แปรรูป', weightKg: 24000, km: qkm, kmAuto: qkm, kmSrc: `ระยะจากพิกัด × ${DEFAULT_SETTINGS.roadFactor}`, kmManual: false, emptyReturn: true, toll: 120, allowance: 800, other: null, marginPct: 20, fuelPrice: DEFAULT_SETTINGS.fuelPrice, rate: 4, liters: ql, fuelCost: ql * DEFAULT_SETTINGS.fuelPrice, cost: qcost, suggested: Math.ceil(qcost * 1.2 / 100) * 100, price: Math.ceil(qcost * 1.2 / 100) * 100, note: 'ข้อมูลตัวอย่าง', createdAt: iso(now - 3 * 3600000), by: null };
   return d;
 }
 
