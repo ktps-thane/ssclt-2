@@ -283,7 +283,13 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   ok(/ส่งงาน · สาขาชุมพร/.test(await page.locator('#sheet h2').textContent()), 'ลงของเสร็จ opens the ส่งงาน form');
   await page.locator('#sheet button[type=submit]').click(); await page.waitForTimeout(300);
   ok(/ยังขาด: รูปบิล \/ ใบส่งของ, รูปสินค้าที่ลง, รูปรถว่างหลังลงของ, ลายเซ็นผู้รับ/.test(await page.locator('#sheet-err').textContent()), 'bill, goods, empty-truck photos and signature are required');
-  await podFill(); await page.fill('#pod-recv', 'คุณรับของ ทดสอบ');
+  await podFill();
+  await page.locator('button[data-act="sigClear"]').click(); await page.waitForTimeout(200);
+  ok(await page.locator('#sheet form[data-sheet]').count() === 1, '"ล้างลายเซ็น" keeps the ส่งงาน form open');
+  await page.locator('#sheet button[type=submit]').click(); await page.waitForTimeout(300);
+  ok(/ยังขาด: ลายเซ็นผู้รับ$/.test((await page.locator('#sheet-err').textContent()).trim()), 'cleared signature must be signed again (photos kept)');
+  { const box = await page.locator('#pod-sig').boundingBox(); await page.mouse.move(box.x + 30, box.y + 50); await page.mouse.down(); await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.6, { steps: 12 }); await page.mouse.up(); }
+  await page.fill('#pod-recv', 'คุณรับของ ทดสอบ');
   await shot('m-pod-sheet');
   await page.locator('#sheet button[type=submit]').click();
   t20 = (await waitDemo(x => x.trips.t20.arr['b_br-cpn'].doneAt)).trips.t20; await page.waitForTimeout(300);
@@ -335,6 +341,48 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   await page.fill('#dp-lt', '07:00'); await page.waitForTimeout(250);
   ok(await page.locator('button.pick:not([disabled]):has(.plate:text-is("70-1004")) .chip.good:has-text("ลงของเสร็จจริง")').count() === 1, 'finished unloading early → truck can load earlier (actual unload + 2 h, before the planned 08:00)');
   await page.locator('label.pick:has-text("เดโปพิษณุโลก") input').uncheck(); await page.waitForTimeout(150);
+
+  log('== GPS เทเลเทค: paste the current-location list ==');
+  await go('#home');
+  await page.locator('button[data-act="gpsImport"]').first().click(); await page.waitForTimeout(250);
+  const today = await page.evaluate(() => { const d = new Date(); return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`; });
+  const hm = mins => page.evaluate(m => { const d = new Date(Date.now() - m * 60000); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`; }, mins);
+  // a whole-page copy: map labels and buttons first, then the list
+  const messy = ['แผนที่ ดาวเทียม', '70-1012กก', '700-6453กก', 'ตำแหน่งปัจจุบัน', 'ค้นหา ซ่อนรถที่ไม่เกี่ยวข้อง', 'ขยายทั้งหมด เลือกทั้งหมด ไม่เลือกทั้งหมด', 'บริษัท ภูเก็ตศรีสุชาติขนส่ง จำกัด', 'จำนวน 43 รายการ',
+    '70-1012กก', today, '68 กม/ชม', 'V.2', await hm(0), 'ปตท.บางสะพาน/ เพชรเกษม ตำบลกำเนิดนพคุณ อำเภอบางสะพาน', 'จังหวัดประจวบคีรีขันธ์',
+    '70-1006กก', today, '0 กม/ชม', 'V.2', await hm(1), 'พุทธมณฑลสาย 3 แขวงศาลาธรรมสพน์ เขตทวีวัฒนา กรุงเทพมหานคร',
+    '70-1004กก', today, '0 กม/ชม', 'V.2', await hm(0), 'Dairy Plus นครสวรรค์/ ตำบลนครสวรรค์ตก อำเภอเมืองนครสวรรค์ จังหวัดนครสวรรค์',
+    '99-9999กก', today, '0 กม/ชม', 'V.2', await hm(20), 'เดโปตัวอย่าง/ เพชรเกษม ตำบลเขาน้อย อำเภอปราณบุรี จังหวัดประจวบคีรีขันธ์',
+    '63-5494กก เข้าจุดจอด : กม./ชม. 14/10/2026 08:39:47'].join('\n');
+  await page.fill('#gps-in', messy); await page.waitForTimeout(250);
+  const gp = (await page.locator('#gps-prev').textContent()).replace(/\s+/g, ' ');
+  ok(/อ่านได้ 4 คัน · ตรงกับรถในระบบ 3 คัน \(กำลังวิ่ง 2 คัน\) · ยังไม่มีในข้อมูลรถ 1 คัน/.test(gp) && /99-9999/.test(gp), 'preview reads trucks from a whole-page copy: ' + gp.slice(0, 110));
+  await page.locator('#sheet button[type=submit]').click();
+  dd = await waitDemo(x => x.vehicles.v12.gps && x.vehicles.v06.gps && x.vehicles.v04.gps); await page.waitForTimeout(250);
+  ok(dd.vehicles.v12.gps.district === 'บางสะพาน' && dd.vehicles.v12.gps.province === 'ประจวบคีรีขันธ์' && dd.vehicles.v12.gps.place === 'ปตท.บางสะพาน' && dd.vehicles.v12.gps.speed === 68 && dd.vehicles.v12.gps.src === 'teletec', 'truck position from Teletec: place, district, province, speed');
+  ok(dd.vehicles.v06.gps.district === 'ทวีวัฒนา' && dd.vehicles.v06.gps.province === 'กรุงเทพมหานคร' && dd.vehicles.v04.gps.district === 'เมืองนครสวรรค์', 'Bangkok เขต and อำเภอเมือง read correctly');
+  ok(dd.trips.t20.pos.src === 'teletec' && dd.trips.t20.pos.district === 'บางสะพาน' && dd.trips.t22.pos.src === 'teletec', 'running trips get the new position too');
+  ok(/ปตท\.บางสะพาน · อ\.บางสะพาน จ\.ประจวบคีรีขันธ์ .*68 กม\.\/ชม\. · GPS เทเลเทค/.test(await page.locator('section:has(h2:has-text("รถกำลังวิ่ง"))').textContent()), 'running board shows the Teletec position and speed');
+  await page.locator('button[data-act="gpsImport"]').first().click(); await page.waitForTimeout(250);
+  await page.locator('button[data-act="gpsSample"]').click(); await page.waitForTimeout(150);
+  await page.locator('#sheet button[type=submit]').click(); await page.waitForTimeout(400);
+  ok(/ไม่มีตำแหน่งที่ใหม่กว่า/.test(await page.locator('#toast').textContent()), 'an older list does not overwrite newer positions');
+  // copying from the browser keeps the Google Maps link → coordinates
+  await page.locator('button[data-act="gpsImport"]').first().click(); await page.waitForTimeout(250);
+  const now1 = await hm(0);
+  await page.evaluate(([d, t]) => {
+    const html = `<div><div><b>70-1006กก</b></div><div>${d}</div><div>0 กม/ชม</div><div>${t}</div><div>พุทธมณฑลสาย 3/ แขวงศาลาธรรมสพน์ เขตทวีวัฒนา กรุงเทพมหานคร <a href="https://www.google.com/maps?q=13.78812,100.31634"><img alt=""></a></div></div>`;
+    const dt = new DataTransfer(); dt.setData('text/html', html); dt.setData('text/plain', 'x');
+    document.getElementById('gps-in').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, [today, now1]);
+  await page.waitForTimeout(250);
+  ok(/\[GPS 13\.78812,100\.31634\]/.test(await page.inputValue('#gps-in')) && /มีพิกัด/.test(await page.locator('#gps-prev').textContent()), 'HTML paste keeps the map pin coordinates');
+  await page.locator('#sheet button[type=submit]').click();
+  dd = await waitDemo(x => x.vehicles.v06.gps.lat === 13.78812);
+  ok(dd.vehicles.v06.gps.lat === 13.78812 && dd.vehicles.v06.gps.place === 'พุทธมณฑลสาย 3', 'coordinates saved with the truck');
+  await go('#master');
+  ok(await page.locator('.row:has(.plate:text-is("70-1006")) :text("GPS เทเลเทค")').count() >= 1, 'vehicle list shows the last GPS position');
+  await go('#home'); await shot('m-home-gps');
 
   log('== settings: time rules ==');
   await go('#settings');

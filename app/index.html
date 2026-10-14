@@ -1004,7 +1004,7 @@ PAGES.home = () => {
   </section>
 
   <section class="sec">
-    <div class="sec-h"><h2>รถกำลังวิ่ง</h2><span class="sub">${running.length ? running.length + ' คัน · ตำแหน่งล่าสุดและจุดต่อไป' : ''}</span></div>
+    <div class="sec-h"><h2>รถกำลังวิ่ง${running.length ? ` <span class="small muted">${running.length} คัน</span>` : ''}</h2><button class="btn sm" data-act="gpsImport" ${dis()}>${icon('gps')}วางตำแหน่งจาก GPS</button></div>
     <div class="list">${running.length ? running.map(t => [t, (tripStops(t).find(x => !stopDone(x)) || {}).due || '9999']).sort((x, y) => String(x[1]).localeCompare(String(y[1]))).map(x => runRow(x[0])).join('') : empty('ไม่มีรถวิ่งอยู่', 'รถที่บันทึกออกรถแล้วจะขึ้นที่นี่ พร้อมตำแหน่งล่าสุดและเวลาที่ต้องถึงปลายทาง')}</div>
   </section>
 
@@ -1755,7 +1755,7 @@ function candRow(x, reco) {
     <span class="radio" aria-hidden="true"></span>
     <span class="main">
       <span class="l1">${plate(v)} ${vt(v.type)} ${own(v)} ${lineBadge(v.line)} ${reco === v.id ? '<span class="reco">แนะนำ</span>' : ''}</span>
-      <span class="l1">${w ? chip(w.ready === false ? 'serious' : 'info', `คิว ${pad(queuePos(w))} · ${siteName(w.siteId)} · ${w.day === dayKey() ? thTime(w.at) : thDT(w.at)}${w.ready === false ? ' · ไม่พร้อม' : ''}`, 'queue') : ''}${w ? queueChip(w) : ''}${timingChip(x)}${v.status === 'repair' ? chip('serious', 'ซ่อม', 'wrench') : v.status === 'off' ? chip('', 'งดใช้งาน') : ''}${!w && !unavailable && !busy ? '<span class="small muted">ไม่ได้เช็คอิน</span>' : ''}</span>
+      <span class="l1">${w ? chip(w.ready === false ? 'serious' : 'info', `คิว ${pad(queuePos(w))} · ${siteName(w.siteId)} · ${w.day === dayKey() ? thTime(w.at) : thDT(w.at)}${w.ready === false ? ' · ไม่พร้อม' : ''}`, 'queue') : ''}${w ? queueChip(w) : ''}${timingChip(x)}${v.gps && Date.now() - new Date(v.gps.at) < 24 * 3600000 ? chip('', `GPS ${placeText(v.gps)} · ${hhmm(v.gps.at)}`, 'pin') : ''}${v.status === 'repair' ? chip('serious', 'ซ่อม', 'wrench') : v.status === 'off' ? chip('', 'งดใช้งาน') : ''}${!w && !unavailable && !busy ? '<span class="small muted">ไม่ได้เช็คอิน</span>' : ''}</span>
       ${!unavailable ? `<span class="l1">${crit.map(c => chip('crit', c.text)).join('')}${warn.map(c => chip('warn', c.text)).join('')}${!crit.length && !warn.length && anySel ? chip('good', 'ผ่านทุกเงื่อนไข') : ''}</span>` : ''}
     </span>
   </button>`;
@@ -1969,7 +1969,7 @@ function posChip(t, link = true) {
   const p = t.pos;
   if (!p) return chip('', t.status === 'running' ? 'ยังไม่มีตำแหน่ง · ให้คนขับกดส่งจากลิงก์คนขับ' : 'ยังไม่มีตำแหน่ง', 'pin');
   const stale = t.status === 'running' && Date.now() - new Date(p.at) > settings().posStaleHours * 3600000;
-  return `${chip(stale ? 'warn' : 'good', `ตอนนี้ ${placeText(p)} · ${agoText(p.at)}`, 'pin')}${link ? ` <a class="small" href="${esc(placeMapUrl(p))}" target="_blank" rel="noopener">แผนที่</a>` : ''}`;
+  return `${chip(stale ? 'warn' : 'good', `ตอนนี้ ${posText(p)} · ${agoText(p.at)}${p.speed !== null && p.speed !== undefined ? (p.speed > 0 ? ` · ${fmt(p.speed)} กม./ชม.` : ' · จอดอยู่') : ''}${p.src === 'teletec' ? ' · GPS เทเลเทค' : ''}`, 'pin')}${link ? ` <a class="small" href="${esc(placeMapUrl(p))}" target="_blank" rel="noopener">แผนที่</a>` : ''}`;
 }
 function stopsLine(stops) {
   return `<span class="stops">${stops.map(st => { const [c] = stopState(st); const d = stopDone(st); return `<span class="${c === 'crit' ? 'late' : d ? 'done' : st.at ? 'here' : ''}">${d ? '✓' : st.at ? '◉' : '○'} ${esc(st.name)}</span>`; }).join('<i>→</i>')}</span>`;
@@ -2016,7 +2016,7 @@ function trackCard(t) {
     ${south && t.status !== 'closed' && t.status !== 'cancel' ? `<form class="rowflex" data-form="arrDate" data-id="${esc(t.id)}" novalidate style="align-items:flex-end"><div class="field" style="flex:1;min-width:180px"><label for="ad-${esc(t.id)}">วันที่ต้องถึงสาขา (ก่อน ${esc(settings().southArriveBy)} น.)</label><input id="ad-${esc(t.id)}" name="arriveDate" type="date" value="${esc(arriveDateOf(t))}"></div><button class="btn sm" type="submit" ${dis()}>บันทึกวันที่</button></form>` : ''}
     ${stops.length ? `<div class="list">${stopRows(t, stops, live)}</div>` : '<p class="small muted">ยังไม่มีปลายทางในทริป</p>'}
     ${live ? `<details class="more" ${t.pos ? '' : 'open'}><summary class="small">อัปเดตตำแหน่งรถ</summary>${posForm(t)}</details>` : ''}
-    ${log.length ? `<details class="more"><summary class="small">ตำแหน่งย้อนหลัง ${t.posLog.length} ครั้ง</summary><div class="log small">${log.map(e => `<div class="row"><div class="main"><div class="l1">${esc(placeText(e))}${e.approx ? ' (ประมาณ)' : ''} <span class="muted">${thDT(e.at)} · ${e.src === 'gps' ? 'GPS' : e.src === 'map' ? 'พิกัดจากแผนที่' : 'ระบุอำเภอ'}</span></div></div><a class="small" href="${esc(placeMapUrl(e))}" target="_blank" rel="noopener">แผนที่</a></div>`).join('')}</div></details>` : ''}
+    ${log.length ? `<details class="more"><summary class="small">ตำแหน่งย้อนหลัง ${t.posLog.length} ครั้ง</summary><div class="log small">${log.map(e => `<div class="row"><div class="main"><div class="l1">${esc(posText(e))}${e.approx ? ' (ประมาณ)' : ''} <span class="muted">${thDT(e.at)} · ${esc(posSrc(e))}</span></div></div><a class="small" href="${esc(placeMapUrl(e))}" target="_blank" rel="noopener">แผนที่</a></div>`).join('')}</div></details>` : ''}
     <p class="small muted">หาอำเภอ/จังหวัดจากพิกัดในเครื่อง · ข้อมูลขอบเขต ${esc(geo().src || 'OpenGISData-Thailand')} · ระบบจริงต่อกับ GPS ติดรถได้</p>
   </section>`;
 }
@@ -2111,7 +2111,7 @@ function openPod(t, key) {
       <div class="podgrid">${POD_SLOTS.map(([k, l]) => slot(k, l)).join('')}</div>
       <div class="field"><span class="lbl req">ลายเซ็นผู้รับ <span class="muted" style="font-weight:400">(ให้ผู้รับเซ็นด้วยนิ้วในกรอบ)</span></span>
         <canvas id="pod-sig" class="sigpad" width="640" height="220" aria-label="ช่องให้ผู้รับเซ็นชื่อด้วยนิ้ว"></canvas>
-        <div class="rowflex"><button type="button" class="btn sm ghost" data-act="sigClear">ล้างลายเซ็น</button><label class="btn sm">${icon('camera')}หรือถ่ายรูปลายเซ็น<input type="file" accept="image/*" data-pod="sign" hidden></label><span class="small muted" id="pod-st-sign"></span></div></div>
+        <div class="rowflex"><button type="button" class="btn sm ghost" data-act="sigClear" data-keep>ล้างลายเซ็น</button><label class="btn sm">${icon('camera')}หรือถ่ายรูปลายเซ็น<input type="file" accept="image/*" data-pod="sign" hidden></label><span class="small muted" id="pod-st-sign"></span></div></div>
       <div class="field"><label for="pod-recv">ชื่อผู้รับสินค้า</label><input id="pod-recv" name="recv" autocomplete="off" placeholder="เช่น คุณสมชาย แผนกรับสินค้า"></div>
       <div id="pod-loc">${chip('', 'กำลังอ่านตำแหน่ง GPS…', 'pin')}</div>
       <div id="pod-prog" class="small muted"></div>
@@ -2196,6 +2196,116 @@ async function submitPod(fd) {
   POD = null;
   toast(e ? `ส่งงานแล้ว · ${placeText(e)}` : 'ส่งงานแล้ว (อ่าน GPS ไม่ได้ จึงไม่มีพิกัด)');
 }
+/* ---------- GPS เทเลเทค: paste the "ตำแหน่งปัจจุบัน" list to update every truck at once ---------- */
+const plateKey = p => { const m = String(p || '').match(/(\d{1,3})\s*-\s*(\d{4})(?!\d)/); return m ? `${+m[1]}-${m[2]}` : normName(p); };
+const posText = e => (e && e.place ? `${e.place} · ` : '') + placeText(e);
+const posSrc = e => ({ gps: 'GPS มือถือ', map: 'พิกัดจากแผนที่', manual: 'ระบุอำเภอ', teletec: 'GPS เทเลเทค' }[e && e.src] || 'GPS');
+// a copied web page, keeping line breaks and the Google Maps links next to each truck
+function htmlToText(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const BLOCK = /^(DIV|P|LI|TR|H[1-6]|SECTION|ARTICLE|HEADER|FOOTER|UL|OL|TABLE|TBODY|THEAD)$/;
+  let out = '';
+  const walk = n => {
+    if (n.nodeType === 3) { out += n.nodeValue; return; }
+    if (n.nodeType !== 1 || n.tagName === 'SCRIPT' || n.tagName === 'STYLE') return;
+    if (n.tagName === 'BR') { out += '\n'; return; }
+    if (n.tagName === 'A') { const L = parseLoc(n.getAttribute('href') || ''); if (L && L.lat !== null && L.lat !== undefined) out += ` [GPS ${L.lat},${L.lng}] `; }
+    if (n.tagName === 'TD' || n.tagName === 'TH') out += '\t';
+    if (BLOCK.test(n.tagName)) out += '\n';
+    n.childNodes.forEach(walk);
+    if (BLOCK.test(n.tagName)) out += '\n';
+  };
+  walk(doc.body);
+  return out.replace(/[ \t]*\n[ \t\n]*/g, '\n').trim();
+}
+function gpsRecord(body) {
+  const dm = body.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/), tm = body.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  let at = null;
+  if (dm) { let y = +dm[3]; if (y > 2400) y -= 543; const d = new Date(y, +dm[2] - 1, +dm[1], tm ? +tm[1] : 0, tm ? +tm[2] : 0, tm && tm[3] ? +tm[3] : 0); if (!isNaN(d)) at = d.toISOString(); }
+  const sp = body.match(/(\d+(?:\.\d+)?)\s*กม\.?\s*\/\s*ชม/);
+  const gm = body.match(/\[GPS\s*(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\]/);
+  const lat = gm ? +gm[1] : null, lng = gm ? +gm[2] : null;
+  const ds = geo().d; const bkk = /กรุงเทพ/.test(body);
+  const pm = body.match(/จังหวัด\s*([ก-๙]+)/);
+  let province = pm ? pm[1] : bkk ? BKK : '';
+  const cands = [...body.matchAll(bkk && !pm ? /เขต\s*([ก-๙]+)/g : /(?:อำเภอ|อ\.)\s*([ก-๙]+)/g)].map(x => x[1]);
+  let district = cands.find(n => ds.some(x => x.name === n && (!province || x.province === province))) || '';
+  if (district && !province) province = (ds.find(x => x.name === district) || {}).province || '';
+  if ((!district || !province) && lat !== null) { const pl = thPlace(lat, lng); if (pl) { district = pl.district; province = pl.province; } }
+  if (province && !ds.some(x => x.province === province)) province = '';
+  if (!district && !province) return null;
+  const line = body.split('\n').map(x => x.trim()).find(x => x.includes('/') && /(ตำบล|แขวง|อำเภอ|เขต|จังหวัด|กรุงเทพ)/.test(x)) || '';
+  const place = line ? line.split('/')[0].trim().slice(0, 60) : '';
+  return { at, speed: sp ? +sp[1] : null, lat, lng, district, province, place };
+}
+function parseGps(text) {
+  const t = String(text || '').replace(/\r/g, '');
+  const re = /(\d{1,3})\s*-\s*(\d{4})(?!\d)\s*([ก-ฮ]{0,3})/g;
+  const hits = []; let m;
+  while ((m = re.exec(t))) hits.push({ i: m.index, end: re.lastIndex, key: `${+m[1]}-${m[2]}`, raw: m[0].trim() });
+  const recs = {};
+  hits.forEach((h, n) => {
+    const r = gpsRecord(t.slice(h.end, n + 1 < hits.length ? hits[n + 1].i : t.length)); if (!r) return;
+    const cur = recs[h.key];
+    if (!cur || String(r.at || '') > String(cur.at || '')) recs[h.key] = { ...r, key: h.key, raw: h.raw };
+  });
+  const byKey = {}; Object.values(S.d.vehicles).forEach(v => { const k = plateKey(v.plate); (byKey[k] = byKey[k] || []).push(v); });
+  return Object.values(recs).map(r => { const vs = byKey[r.key] || []; return { ...r, vehicle: vs.length === 1 ? vs[0] : null, dup: vs.length > 1 }; });
+}
+let GPSROWS = [];
+function gpsPreview() {
+  const el = $('#gps-prev'); const ta = $('#gps-in'); if (!el || !ta) return;
+  GPSROWS = parseGps(ta.value);
+  if (!ta.value.trim()) { el.innerHTML = ''; return; }
+  if (!GPSROWS.length) { el.innerHTML = `<div class="note warn small">ยังอ่านตำแหน่งไม่ได้ ต้องมีทะเบียนรถ และที่อยู่ที่มีอำเภอ/เขต และจังหวัด เหมือนในหน้าตำแหน่งปัจจุบันของเทเลเทค</div>`; return; }
+  const ok = GPSROWS.filter(r => r.vehicle), miss = GPSROWS.filter(r => !r.vehicle);
+  const run = new Set(Object.values(S.d.trips).filter(t => t.status === 'running').map(t => t.vehicleId));
+  el.innerHTML = `<div class="note ${ok.length ? 'good' : 'warn'} small">อ่านได้ ${GPSROWS.length} คัน · ตรงกับรถในระบบ ${ok.length} คัน (กำลังวิ่ง ${ok.filter(r => run.has(r.vehicle.id)).length} คัน)${miss.length ? ` · ยังไม่มีในข้อมูลรถ ${miss.length} คัน` : ''}</div>
+    <div class="list small">${ok.slice(0, 60).map(r => `<div class="row"><div class="main"><div class="l1">${plate(r.vehicle)} ${run.has(r.vehicle.id) ? chip('warn', 'กำลังวิ่ง') : ''} <span class="meta">${esc(posText(r))}</span></div><div class="meta num">${r.at ? dtText(r.at) : 'ไม่มีเวลา'}${r.speed !== null ? ` · ${fmt(r.speed)} กม./ชม.` : ''}${r.lat !== null ? ' · มีพิกัด' : ''}</div></div></div>`).join('')}</div>
+    ${miss.length ? `<p class="small muted">ไม่มีในข้อมูลรถ: ${miss.map(r => esc(r.raw)).join(', ')}${miss.some(r => r.dup) ? ' (บางทะเบียนซ้ำกันในข้อมูลรถ)' : ''}</p>` : ''}`;
+}
+async function applyGps(rows) {
+  const now = new Date().toISOString(); let nv = 0, nt = 0;
+  for (const r of rows) {
+    const v = r.vehicle && S.d.vehicles[r.vehicle.id]; if (!v) continue;
+    const e = { at: r.at || now, lat: r.lat, lng: r.lng, acc: null, district: r.district, province: r.province, place: r.place, speed: r.speed, approx: false, src: 'teletec', by: S.uid || null, importedAt: now };
+    if (v.gps && v.gps.at && v.gps.at >= e.at) continue;
+    await patch('vehicles', v.id, { gps: e }); nv++;
+    const t = Object.values(S.d.trips).find(x => x.status === 'running' && x.vehicleId === v.id);
+    if (t && (!t.pos || !t.pos.at || t.pos.at < e.at)) { await patch('trips', t.id, { pos: e, posLog: [...(t.posLog || []).slice(-29), e] }); nt++; }
+  }
+  return { nv, nt };
+}
+function gpsSampleText() {
+  const d = new Date(); const ds = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  const tm = mins => { const x = new Date(Date.now() - mins * 60000); return `${pad(x.getHours())}:${pad(x.getMinutes())}:${pad(x.getSeconds())}`; };
+  return [
+    ['70-1012กก', 68, tm(6), 'ปตท.บางสะพาน/ เพชรเกษม ตำบลกำเนิดนพคุณ อำเภอบางสะพาน จังหวัดประจวบคีรีขันธ์'],
+    ['70-1004กก', 0, tm(3), 'Dairy Plus นครสวรรค์/ ตำบลนครสวรรค์ตก อำเภอเมืองนครสวรรค์ จังหวัดนครสวรรค์'],
+    ['70-1006กก', 0, tm(12), 'พุทธมณฑลสาย 3/ แขวงศาลาธรรมสพน์ เขตทวีวัฒนา กรุงเทพมหานคร'],
+    ['99-9999กก', 0, tm(20), 'เดโปตัวอย่าง/ เพชรเกษม ตำบลเขาน้อย อำเภอปราณบุรี จังหวัดประจวบคีรีขันธ์'],
+  ].map(([p, sp, t, loc]) => `${p}\n${ds}\n${sp} กม/ชม\nV.2\n${t}\n${loc}`).join('\n');
+}
+function openGpsImport() {
+  GPSROWS = [];
+  openSheet({
+    title: 'วางตำแหน่งจาก GPS เทเลเทค', submit: 'บันทึกตำแหน่ง',
+    body: `<ol class="small meta" style="margin:0;padding-left:20px">
+        <li>เปิดเว็บเทเลเทค หน้า "ตำแหน่งปัจจุบัน"</li>
+        <li>คลิกในรายการรถ แล้วกด Ctrl+A (มือถือ: กดค้างที่รายการ → เลือกทั้งหมด)</li>
+        <li>กด Ctrl+C (มือถือ: คัดลอก) แล้วมาวางในช่องนี้</li></ol>
+      <div class="field"><label for="gps-in">รายการตำแหน่งปัจจุบัน</label><textarea id="gps-in" rows="6" placeholder="วางที่นี่ (ทะเบียน วันที่ เวลา ความเร็ว และที่อยู่ของรถแต่ละคัน)"></textarea></div>
+      ${S.demo ? `<button type="button" class="btn sm ghost" data-act="gpsSample" data-keep>ใส่ข้อความตัวอย่าง (โหมดทดลอง)</button>` : ''}
+      <div id="gps-prev" class="stack" style="gap:8px"></div>`,
+    onSubmit: async () => {
+      gpsPreview();
+      const rows = GPSROWS.filter(r => r.vehicle);
+      if (!rows.length) return GPSROWS.length ? 'ทะเบียนที่วางยังไม่มีในข้อมูลรถ เพิ่มรถก่อน (หรือส่งไฟล์ทะเบียนให้ผมนำเข้า)' : 'วางรายการตำแหน่งปัจจุบันจากเทเลเทคก่อน';
+      let res; try { res = await applyGps(rows); } catch { return 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง'; }
+      toast(res.nv ? `อัปเดตตำแหน่ง ${res.nv} คัน (กำลังวิ่ง ${res.nt} คัน) จาก GPS เทเลเทค` : 'ไม่มีตำแหน่งที่ใหม่กว่าที่บันทึกไว้');
+    },
+  });
+}
 PAGES.trips = () => {
   const tab = ui.trips.tab;
   const all = Object.values(S.d.trips);
@@ -2203,7 +2313,7 @@ PAGES.trips = () => {
   const list = all.filter(pick[tab]).sort((a, b) => tab === 'active' ? String(a.date).localeCompare(String(b.date)) : String(b.date).localeCompare(String(a.date)));
   return `
   <div class="sec-h">${seg('tripTab', tab, [['active', 'วางแผน / กำลังวิ่ง', all.filter(pick.active).length], ['closed', 'ปิดแล้ว', all.filter(pick.closed).length], ['cancel', 'ยกเลิก', all.filter(pick.cancel).length]])}<a class="btn primary" href="#dispatch">${icon('plus')}จัดรถใหม่</a></div>
-  ${tab === 'active' ? notifySection(all) : ''}
+  ${tab === 'active' ? `<div class="rowflex" style="justify-content:space-between;align-items:center"><span class="small muted">ตำแหน่งรถทุกคันจาก GPS เทเลเทค</span><button class="btn sm" data-act="gpsImport" ${dis()}>${icon('gps')}วางตำแหน่งจาก GPS</button></div>` + notifySection(all) : ''}
   <div class="list">${list.length ? list.map(tripRow).join('') : empty('ไม่มีทริปในกลุ่มนี้', 'สร้างทริปจากหน้า จัดรถ')}</div>
   <p class="small muted">1 Trip = รถออกจากฐาน (ปั๊มนครสวรรค์ / คลังสาย 3) หนึ่งรอบจนกลับ · 1 Trip มีได้หลาย Job (ขา) เช่น นครสวรรค์ → สาย 3 (ขาลง) → สมุทรสาคร (ขากลับ) → นครสวรรค์ · Standard KM ของทริป = ผลรวมทุกขา</p>`;
 };
@@ -2435,7 +2545,7 @@ PAGES.master = () => {
 };
 function masterRow(tab, x) {
   const btns = `<div class="actions"><button class="btn sm" data-act="edit" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>แก้ไข</button><button class="btn sm danger" data-act="delete" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>ลบ</button></div>`;
-  if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${lineBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">รับ ${fmt(num(payloadCap(x)))} กก.${num(x.tareKg) ? ` · รถเปล่า ${fmt(num(x.tareKg))} กก.` : ''}${x.gpsProvider ? ` · GPS ${esc(x.gpsProvider)}` : ''} · ${fmt(num(x.capVolumeCbm))} คิว · ${fmt(num(x.capPallets))} พาเลท · ไมล์ ${fmt(num(x.currentKm))} · ${esc(m.label)}</div>${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
+  if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${lineBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">รับ ${fmt(num(payloadCap(x)))} กก.${num(x.tareKg) ? ` · รถเปล่า ${fmt(num(x.tareKg))} กก.` : ''}${x.gpsProvider ? ` · GPS ${esc(x.gpsProvider)}` : ''} · ${fmt(num(x.capVolumeCbm))} คิว · ${fmt(num(x.capPallets))} พาเลท · ไมล์ ${fmt(num(x.currentKm))} · ${esc(m.label)}</div>${x.gps ? `<div class="small meta">${icon('pin')} ${esc(posText(x.gps))} · ${esc(agoText(x.gps.at))} · ${esc(posSrc(x.gps))}</div>` : ''}${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
   if (tab === 'drivers') return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> ${x.nickname ? `<span class="meta">(${esc(x.nickname)})</span>` : ''} ${x.active === false ? chip('', 'พัก / ออกแล้ว') : ''}</div><div class="small meta">${x.phone ? esc(x.phone) : 'ไม่มีเบอร์โทร'}</div>${btns}</div></div>`;
   if (tab === 'sites') { const pinned = x.lat !== null && x.lat !== undefined; const ck = CHECKIN_KINDS.includes(x.kind); return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> <span class="small muted">${esc(SITE_KIND[x.kind] || '')}</span> ${lineBadge(x.line)} ${ck ? (pinned ? chip('good', 'ปักหมุดแล้ว', 'pin') : chip('warn', 'ยังไม่ปักหมุด', 'pin')) : ''} ${x.operator ? chip(x.operator === 'Partner' ? '' : 'info', x.operator === 'SSC' ? 'กระจายโดยรถบริษัท' : x.operator === 'Partner' ? 'กระจายโดย Partner' : 'รถบริษัท + Partner') : ''}</div>${x.aliases ? `<div class="small meta">ชื่อเรียกหน้างาน: ${esc(x.aliases)}</div>` : ''}${x.backhaulCutoff ? `<div class="small meta">ตัดรอบรถมีงาน Backhaul ${esc(x.backhaulCutoff)} น.</div>` : ''}${x.provinces ? `<div class="small meta">ดูแลจังหวัด: ${esc(x.provinces)}</div>` : ''}${ck ? `<div class="small meta num">${pinned ? `${(+x.lat).toFixed(5)}, ${(+x.lng).toFixed(5)} · รัศมี ${fmt(num(x.radiusM) || settings().defaultRadiusM)} ม. · ${locLink(x)}` : 'วางพิกัดจาก Google Maps ในหน้าแก้ไข'}</div>` : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
   return `<div class="row"><div class="main"><div class="l1">${kindB(x.kind)} <b>${esc(x.name)}</b> ${lineBadge(x.line)}</div><div class="small meta num">${esc(x.origin || '–')} → ${esc(x.destination || '–')} · Standard ${num(x.standardKm) ? fmt(num(x.standardKm)) + ' กม.' : 'ยังไม่มี'} · เบี้ยเลี้ยง ${money(num(x.allowance))} · ทางด่วน ${money(num(x.toll))}</div>${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`;
@@ -2727,14 +2837,14 @@ PAGES.pending = () => {
       <li><b>เวลาเข้าสาขา:</b> ทุกสาขาภาคใต้ต้องถึงก่อนประมาณ 07:00 น. (ค่าเริ่มต้นคือเช้าวันถัดจากวันออกรถ แก้วันได้ในทริป)</li>
       <li><b>รถกำลังวิ่ง:</b> ต้องเห็นว่าวิ่งจากไหนไปไหน ตอนนี้ถึงอำเภอ/จังหวัดไหนแล้ว</li>
       <li><b>ส่งงาน:</b> ทุกจุดคนขับกด "ถึงแล้ว" และ "ลงของเสร็จ" ระบบจับตำแหน่งตอนกด ลงของเสร็จต้องถ่ายรูปบิล รูปสินค้า รูปรถว่าง และลายเซ็นผู้รับ · ที่ Dairy Plus ใช้เวลาลงของเสร็จจริง + 2 ชม. (ลงเร็วได้โหลดเร็ว)</li>
-      <li><b>GPS ติดรถ:</b> รถบรรทุกใช้เทเลเทค รถเล็กใช้ Forth Tracking และให้คนขับกดส่งจากมือถือด้วย</li>
+      <li><b>GPS ติดรถ:</b> รถบรรทุกใช้เทเลเทค รถเล็กใช้ Forth Tracking และให้คนขับกดส่งจากมือถือด้วย · คัดลอกหน้า "ตำแหน่งปัจจุบัน" ของเทเลเทคมาวางในแอปได้ทีเดียวทุกคัน</li>
     </ol></div></section>
   <section class="sec"><h2>เรื่องที่ยังต้องถาม</h2>
     <div class="card pad doc"><ol>
       <li>งาน SC Standard Can รับกระป๋องที่ไหน (ต้นทางก่อนไปลำปาง)</li>
       <li>แจ้งทะเบียนโรงงานผ่านช่องทางไหน (กลุ่ม LINE / อีเมล / โทร) จะได้ทำข้อความให้ตรงรูปแบบ</li>
       <li>น้ำหนักรถเปล่า (หัว + หาง) ของแต่ละคัน ส่งมาพร้อมไฟล์ทะเบียนได้ไหม</li>
-      <li>ลิงก์เว็บไซต์ GPS เทเลเทค และ Forth Tracking (เฮียจะส่งมาให้ดู ไม่ต้องส่งรหัสผ่าน) จะได้ดูว่าดึงตำแหน่งเข้าระบบได้ทางไหน</li>
+      <li>ตรีเพชรอีซูซุ (เทเลเทค) มี API ให้ดึงตำแหน่งรถอัตโนมัติไหม · ภาพหน้าจอตำแหน่งปัจจุบันของ Forth Tracking (รถเล็ก)</li>
     </ol></div></section>
   <section class="sec"><h2>ระบบอื่นที่จะทำต่อ</h2>
     <div class="card pad doc"><ul>
@@ -2795,6 +2905,8 @@ const ACT = {
     toast(e ? `บันทึกเวลาถึงแล้ว · ${placeText(e)}` : 'บันทึกเวลาถึงแล้ว (อ่าน GPS ไม่ได้ จึงไม่มีพิกัด)');
     render({ force: true });
   },
+  gpsImport: () => openGpsImport(),
+  gpsSample: () => { const ta = $('#gps-in'); if (ta) { ta.value = gpsSampleText(); gpsPreview(); } },
   podOpen: el => { const t = S.d.trips[el.dataset.id]; if (t) openPod(t, el.dataset.k); },
   sigClear: () => clearSig(),
   stopUndo: el => {
@@ -2983,7 +3095,7 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
   const fn = ACT[el.dataset.act]; if (!fn) return;
   if (el.tagName !== 'INPUT') e.preventDefault();
-  if (el.closest('#sheet .body') && el.dataset.act !== 'copyText') closeSheet();
+  if (el.closest('#sheet .body') && el.dataset.act !== 'copyText' && !el.hasAttribute('data-keep')) closeSheet();
   fn(el, e);
 });
 let debTimer = null;
@@ -3006,8 +3118,16 @@ function onBind(e) {
   if (rr === 'debounce') { clearTimeout(debTimer); debTimer = setTimeout(() => render({ force: true }), 350); }
 }
 function markDirty(e) { const t = e.target; if (t && t.dataset && !t.dataset.bind && t.closest && t.closest('#main form[data-form]')) formDirty = true; }
-document.addEventListener('input', e => { markDirty(e); if (e.target.dataset && e.target.dataset.imp) { updateImportPreview(e.target); return; } if (e.target.dataset && e.target.dataset.sort) { updateSortPreview(e.target); return; } if (e.target.type !== 'radio' && e.target.tagName !== 'SELECT') onBind(e); });
+document.addEventListener('input', e => { if (e.target && e.target.id === 'gps-in') { gpsPreview(); return; } markDirty(e); if (e.target.dataset && e.target.dataset.imp) { updateImportPreview(e.target); return; } if (e.target.dataset && e.target.dataset.sort) { updateSortPreview(e.target); return; } if (e.target.type !== 'radio' && e.target.tagName !== 'SELECT') onBind(e); });
 document.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.pod) { podPick(e.target); return; } if (e.target.type === 'radio' || e.target.tagName === 'SELECT' || e.target.type === 'checkbox' || e.target.type === 'date') { if (e.target.dataset && e.target.dataset.act) return; onBind(e); } });
+document.addEventListener('paste', e => {
+  if (!e.target || e.target.id !== 'gps-in' || !e.clipboardData) return;
+  const html = e.clipboardData.getData('text/html'); if (!html) return;
+  const txt = htmlToText(html); if (!/\[GPS /.test(txt)) return;
+  e.preventDefault();
+  const ta = e.target, a = ta.selectionStart || 0, b = ta.selectionEnd || 0;
+  ta.value = ta.value.slice(0, a) + txt + ta.value.slice(b); gpsPreview();
+});
 document.addEventListener('submit', async e => {
   const form = e.target; e.preventDefault();
   const fd = Object.fromEntries(new FormData(form).entries());
