@@ -48,12 +48,16 @@ const MOCK = `(() => {
     },
   });
   const user = Object.freeze({ id: async () => 'u_test', can: async () => (window.__canWrite === false ? false : true), isOwner: async () => true, canEdit: async () => true });
-  window.claude = { use: async name => (name === 'db' ? db : name === 'user' ? user : null) };
+  window.__uploads = [];
+  const assets = Object.freeze({ upload: async (blob, opts) => { const id = Array.from({ length: 32 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join(''); window.__uploads.push({ id, type: (opts && opts.type) || blob.type, size: blob.size }); return { id, url: '/_blob/' + id, sizeBytes: blob.size, contentType: (opts && opts.type) || blob.type }; } });
+  window.claude = { use: async name => (name === 'db' ? db : name === 'user' ? user : name === 'assets' ? assets : null) };
 })();`;
 
 (async () => {
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'th-TH', timezoneId: 'Asia/Bangkok' });
+  await ctx.grantPermissions(['geolocation']).catch(() => {});
+  await ctx.setGeolocation({ latitude: 9.1382, longitude: 99.3215, accuracy: 20 }).catch(() => {});
   await ctx.addInitScript(MOCK);
   const errors = [];
   const track = p => { p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/fonts|net::|ERR_/.test(m.text())) errors.push(m.text()); }); };
@@ -147,6 +151,25 @@ const MOCK = `(() => {
   await A.bringToFront(); await go(A, '#home'); await A.waitForTimeout(300);
   ok(/อ\.เมืองสุราษฎร์ธานี จ\.สุราษฎร์ธานี/.test(await A.locator('section:has(h2:has-text("รถกำลังวิ่ง"))').textContent()), 'dispatcher home shows where the truck is now');
   await B.screenshot({ path: OUT + '/live-driver-trip.png', fullPage: true });
+
+  log('== driver ส่งงาน on the phone: photos go to artifact storage, ids into the trip ==');
+  await B.bringToFront();
+  await B.locator('section:has(h2:has-text("ทริปของฉัน")) button[data-act="stopArrive"]').click(); await B.waitForTimeout(1500);
+  await B.locator('section:has(h2:has-text("ทริปของฉัน")) button[data-act="podOpen"]').click(); await B.waitForTimeout(300);
+  for (const k of ['bill', 'goods', 'empty']) { await B.setInputFiles(`input[data-pod="${k}"]`, OUT + '/live-driver-ticket.png'); await B.waitForSelector(`#pod-slot-${k}.ok`, { timeout: 8000 }); }
+  const sb = await B.locator('#pod-sig').boundingBox();
+  await B.mouse.move(sb.x + 20, sb.y + 30); await B.mouse.down(); await B.mouse.move(sb.x + sb.width * 0.6, sb.y + sb.height * 0.7, { steps: 12 }); await B.mouse.up();
+  await B.locator('#sheet button[type=submit]').click(); await B.waitForTimeout(1500);
+  st = await store();
+  const tr2 = Object.entries(st).find(([k]) => k.startsWith('trips/'))[1];
+  const stop = Object.values(tr2.arr || {})[0] || {};
+  const ups = await B.evaluate(() => window.__uploads);
+  ok(stop.doneAt && Object.keys(stop.photos || {}).length === 4 && Object.values(stop.photos).every(v => /^[0-9a-f]{32}$/.test(v)), 'four pictures uploaded, only their ids stored in the trip');
+  ok(ups.length === 4 && ups.filter(u => u.type === 'image/jpeg').length === 3 && ups.some(u => u.type === 'image/png') && ups.every(u => u.size < 600000), 'photos shrunk to JPEG, signature as PNG: ' + ups.map(u => u.type + ' ' + u.size).join(', '));
+  ok(stop.doneLoc && stop.doneLoc.district === 'เมืองสุราษฎร์ธานี' && stop.doneBy === 'u_test', 'ส่งงาน has the GPS position and who pressed it');
+  await A.bringToFront(); await go(A, '#trip-' + Object.keys(st).find(k => k.startsWith('trips/')).split('/')[1]); await A.waitForTimeout(300);
+  const srcs = await A.locator('.podthumbs img').evaluateAll(els => els.map(e => e.getAttribute('src')));
+  ok(srcs.length === 4 && srcs.every(x => /^\/_blob\/[0-9a-f]{32}$/.test(x)), 'dispatcher sees the proof pictures from artifact storage');
 
   log('== parcel received on one screen, scanned at destination on another ==');
   await go(A, '#receive');

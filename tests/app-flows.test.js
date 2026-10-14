@@ -14,6 +14,9 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
 (async () => {
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' }).catch(() => chromium.launch());
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, locale: 'th-TH', timezoneId: 'Asia/Bangkok', acceptDownloads: true });
+  // phone GPS: start at Chumphon (moved per step below)
+  await ctx.grantPermissions(['geolocation']).catch(() => {});
+  await ctx.setGeolocation({ latitude: 10.4930, longitude: 99.1800, accuracy: 20 }).catch(() => {});
   if (LIBS) {
     await ctx.route('https://cdnjs.cloudflare.com/**', route => {
       const u = route.request().url();
@@ -31,6 +34,14 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const shot = async n => page.screenshot({ path: `${OUT}/${n}.png`, fullPage: true });
   const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v5')));
+  const waitDemo = async (pred, ms = 9000) => { const t0 = Date.now(); let d = null; while (Date.now() - t0 < ms) { d = await demo(); try { if (pred(d)) return d; } catch {} await page.waitForTimeout(150); } return d; };
+  const podFill = async () => {
+    const img = OUT + '/m-home.png';
+    for (const k of ['bill', 'goods', 'empty']) { await page.setInputFiles(`input[data-pod="${k}"]`, img); await page.waitForSelector(`#pod-slot-${k}.ok`, { timeout: 8000 }); }
+    const box = await page.locator('#pod-sig').boundingBox();
+    await page.mouse.move(box.x + 20, box.y + 40); await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.7, { steps: 10 }); await page.mouse.move(box.x + box.width * 0.8, box.y + box.height * 0.3, { steps: 10 }); await page.mouse.up();
+  };
   const sheetOk = async () => { await page.locator('#sheet button[type=submit]').click(); await page.waitForTimeout(250); };
 
   log('== pages (demo, phone 390 & 360) ==');
@@ -254,16 +265,32 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   ok(t20.pos.district === 'ท่าชนะ' && t20.pos.src === 'manual' && t20.pos.lat === null, 'district picked from the list (when calling the driver)');
   await posSubmit('place', 'อำเภอที่ไม่มีจริง');
   ok(/ไม่พบชื่ออำเภอ/.test(await page.locator('form[data-form="pos"] .errbox').textContent().catch(() => '')), 'unknown district rejected');
-  await page.locator('button[data-act="stopArrive"][data-k="b_br-cpn"]').click(); await page.waitForTimeout(250);
-  t20 = (await demo()).trips.t20;
+  await page.locator('button[data-act="stopArrive"][data-k="b_br-cpn"]').click();
+  t20 = (await waitDemo(x => x.trips.t20.arr && x.trips.t20.arr['b_br-cpn'])).trips.t20; await page.waitForTimeout(200);
   ok(!!(t20.arr && t20.arr['b_br-cpn'] && t20.arr['b_br-cpn'].at), 'dispatcher marks arrival at สาขาชุมพร');
-  ok(await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง")) .row:has-text("สาขาชุมพร") .chip.good:has-text("ถึงแล้ว")').count() === 1, 'arrived before 07:00 shows as on time');
+  ok(!!(t20.arr['b_br-cpn'].loc && t20.arr['b_br-cpn'].loc.district === 'เมืองชุมพร'), 'pressing "ถึงแล้ว" also records the GPS position (' + JSON.stringify(t20.arr['b_br-cpn'].loc && t20.arr['b_br-cpn'].loc.district) + ')');
+  ok(await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง")) .row:has-text("สาขาชุมพร") .chip.good:has-text("กำลังลงของ")').count() === 1, 'arrived before 07:00 shows as on time, then unloading');
   await page.locator('button[data-act="stopUndo"][data-k="b_br-cpn"]').click(); await page.waitForTimeout(250);
   ok(!((await demo()).trips.t20.arr || {})['b_br-cpn'], 'arrival can be undone');
-  await page.locator('button[data-act="stopArrive"][data-k="b_br-cpn"]').click(); await page.waitForTimeout(250);
+  await page.locator('button[data-act="stopArrive"][data-k="b_br-cpn"]').click();
+  await waitDemo(x => x.trips.t20.arr && x.trips.t20.arr['b_br-cpn']); await page.waitForTimeout(200);
   const d2 = await page.evaluate(() => { const d = new Date(); d.setDate(d.getDate() + 2); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
   await page.fill('#ad-t20', d2); await page.locator('form[data-form="arrDate"] button[type=submit]').click(); await page.waitForTimeout(250);
   ok((await demo()).trips.t20.arriveDate === d2, 'hub arrival date can be changed on the trip');
+
+  log('== ส่งงาน: unload done with photos, signature and GPS ==');
+  await page.locator('button[data-act="podOpen"][data-k="b_br-cpn"]').click(); await page.waitForTimeout(300);
+  ok(/ส่งงาน · สาขาชุมพร/.test(await page.locator('#sheet h2').textContent()), 'ลงของเสร็จ opens the ส่งงาน form');
+  await page.locator('#sheet button[type=submit]').click(); await page.waitForTimeout(300);
+  ok(/ยังขาด: รูปบิล \/ ใบส่งของ, รูปสินค้าที่ลง, รูปรถว่างหลังลงของ, ลายเซ็นผู้รับ/.test(await page.locator('#sheet-err').textContent()), 'bill, goods, empty-truck photos and signature are required');
+  await podFill(); await page.fill('#pod-recv', 'คุณรับของ ทดสอบ');
+  await shot('m-pod-sheet');
+  await page.locator('#sheet button[type=submit]').click();
+  t20 = (await waitDemo(x => x.trips.t20.arr['b_br-cpn'].doneAt)).trips.t20; await page.waitForTimeout(300);
+  const pa = t20.arr['b_br-cpn'];
+  ok(!!pa.doneAt && Object.keys(pa.photos || {}).sort().join() === 'bill,empty,goods,sign' && Object.values(pa.photos).every(v => /^data:image\/(jpeg|png)/.test(v)), 'unload done saved with bill, goods, empty-truck photos and the signature');
+  ok(pa.recv === 'คุณรับของ ทดสอบ' && pa.doneLoc && pa.doneLoc.district === 'เมืองชุมพร', 'ส่งงาน records the receiver and where it was pressed');
+  ok(await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง")) .row:has-text("สาขาชุมพร") .podthumbs img').count() === 4 && await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง")) .row:has-text("สาขาชุมพร") .chip:has-text("ลงของเสร็จ")').count() === 1, 'trip shows the 4 proof pictures and the unload time');
   await shot('m-trip-track');
   // late: due date already passed and the truck has not reached สุราษฎร์
   await page.evaluate(() => { const k = 'ssc-demo-data-v5'; const x = JSON.parse(localStorage.getItem(k)); const d = new Date(); d.setDate(d.getDate() - 1); x.trips.t20.arriveDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; x.trips.t20.date = x.trips.t20.arriveDate; localStorage.setItem(k, JSON.stringify(x)); });
@@ -277,20 +304,37 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   await page.reload(); await page.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
   await go('#checkin');
   ok(await page.locator('h2:has-text("ทริปของฉัน")').count() === 1 && await page.locator('button[data-act="posGps"]').count() === 1, 'driver page shows my running trip with a send-position button');
+  await ctx.setGeolocation({ latitude: 9.1382, longitude: 99.3215, accuracy: 20 }).catch(() => {});
   const nextBtn = page.locator('section:has(h2:has-text("ทริปของฉัน")) button[data-act="stopArrive"]');
   ok(/ถึง สาขาสุราษฎร์ธานี แล้ว/.test(await nextBtn.textContent().catch(() => '')), 'driver gets a one-tap "arrived" for the next hub');
-  await nextBtn.click(); await page.waitForTimeout(250);
-  ok(!!((await demo()).trips.t20.arr || {})['b_br-srt'], 'driver arrival saved');
-  let gpsOk = false;
-  try { await ctx.grantPermissions(['geolocation']); await ctx.setGeolocation({ latitude: 8.4304, longitude: 99.9631, accuracy: 20 }); gpsOk = true; } catch {}
-  if (gpsOk) {
-    await page.locator('button[data-act="posGps"]').click(); await page.waitForTimeout(1200);
-    const g = (await demo()).trips.t20.pos;
-    ok(g.src === 'gps' && g.province === 'นครศรีธรรมราช', 'GPS position saved with district (' + g.district + ' / ' + g.province + ')');
-  } else log('  (skip GPS: browser context has no geolocation permission)');
+  await nextBtn.click();
+  const srt = (await waitDemo(x => (x.trips.t20.arr || {})['b_br-srt'])).trips.t20.arr['b_br-srt']; await page.waitForTimeout(250);
+  ok(!!srt && srt.loc && srt.loc.district === 'เมืองสุราษฎร์ธานี', 'driver arrival saved with GPS position');
+  ok(/ลงของเสร็จ \/ ส่งงาน สาขาสุราษฎร์ธานี/.test(await page.locator('section:has(h2:has-text("ทริปของฉัน")) button[data-act="podOpen"]').textContent().catch(() => '')), 'after arriving the driver gets "ลงของเสร็จ / ส่งงาน"');
+  await ctx.setGeolocation({ latitude: 8.4304, longitude: 99.9631, accuracy: 20 }).catch(() => {});
+  await page.locator('button[data-act="posGps"]').click();
+  const g = (await waitDemo(x => x.trips.t20.pos && x.trips.t20.pos.src === 'gps' && x.trips.t20.pos.province === 'นครศรีธรรมราช')).trips.t20.pos;
+  ok(g.src === 'gps' && g.province === 'นครศรีธรรมราช', 'GPS position saved with district (' + g.district + ' / ' + g.province + ')');
   await shot('m-driver-trip');
   await page.evaluate(() => localStorage.removeItem('ssc-me'));
   await go('#home'); await page.reload(); await page.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
+
+  log('== Dairy Plus: actual unload time + 2 h ==');
+  await ctx.setGeolocation({ latitude: 15.7047, longitude: 100.1372, accuracy: 20 }).catch(() => {});
+  await go('#trip-t22');
+  const dpKey = 'n_dairyplusนครสวรรค์';
+  await page.locator(`button[data-act="stopArrive"][data-k="${dpKey}"]`).click();
+  await waitDemo(x => (x.trips.t22.arr || {})[dpKey]); await page.waitForTimeout(250);
+  await page.locator(`button[data-act="podOpen"][data-k="${dpKey}"]`).click(); await page.waitForTimeout(300);
+  await podFill(); await page.locator('#sheet button[type=submit]').click();
+  const dpa = (await waitDemo(x => x.trips.t22.arr[dpKey].doneAt)).trips.t22.arr[dpKey]; await page.waitForTimeout(250);
+  ok(!!dpa.doneAt && dpa.doneLoc && dpa.doneLoc.district === 'เมืองนครสวรรค์', 'unload done at Dairy Plus นครสวรรค์ with GPS');
+  await go('#dispatch');
+  await page.locator('button[data-act="dpLine"][data-v="north"]').click(); await page.waitForTimeout(200);
+  await page.locator('label.pick:has-text("เดโปพิษณุโลก") input').check(); await page.waitForTimeout(200);
+  await page.fill('#dp-lt', '07:00'); await page.waitForTimeout(250);
+  ok(await page.locator('button.pick:not([disabled]):has(.plate:text-is("70-1004")) .chip.good:has-text("ลงของเสร็จจริง")').count() === 1, 'finished unloading early → truck can load earlier (actual unload + 2 h, before the planned 08:00)');
+  await page.locator('label.pick:has-text("เดโปพิษณุโลก") input').uncheck(); await page.waitForTimeout(150);
 
   log('== settings: time rules ==');
   await go('#settings');

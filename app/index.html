@@ -336,6 +336,18 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
 .stops i{font-style:normal;color:var(--fg-3)}
 .stops .done{color:var(--good-ink)}
 .stops .late{color:var(--crit-ink);font-weight:600}
+.stops .here{color:var(--warn-ink);font-weight:600}
+.podgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,104px),1fr));gap:8px}
+.podslot{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:8px;border:1.5px dashed var(--line-strong);border-radius:var(--r);cursor:pointer;background:var(--surface)}
+.podslot.ok{border-style:solid;border-color:var(--brand)}
+.podslot .thumb{width:100%;aspect-ratio:4/3;border-radius:8px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--fg-3)}
+.podslot .thumb .i{width:28px;height:28px}
+.podslot .thumb img{width:100%;height:100%;object-fit:cover}
+.sigpad{display:block;width:100%;height:auto;aspect-ratio:640/220;border:1.5px dashed var(--line-strong);border-radius:10px;background:#fff;touch-action:none;cursor:crosshair}
+.podthumbs{display:flex;flex-wrap:wrap;gap:8px}
+.podthumbs figure{margin:0;width:76px;display:flex;flex-direction:column;gap:2px}
+.podthumbs img{width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#fff;display:block}
+.podthumbs figcaption{font-size:11px;line-height:1.25;color:var(--fg-3)}
 </style>
 
 <div class="app" id="app">
@@ -390,6 +402,7 @@ const ICONS = {
   box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
   parcel: '<rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 11h18M10 7V4h4v3M8 15h3"/>',
   truck: '<path d="M2 6h12v10H2zM14 9h4.5L22 12.5V16h-8"/><circle cx="6.5" cy="17.5" r="1.9"/><circle cx="17.5" cy="17.5" r="1.9"/>',
+  camera: '<path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.8l1.6-2.2h6.2L16.7 7h2.8A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.6"/>',
   route: '<circle cx="6" cy="19" r="2"/><circle cx="18" cy="5" r="2"/><path d="M8 19h8.5a3.5 3.5 0 0 0 0-7h-9a3.5 3.5 0 0 1 0-7H16"/>',
   grid: '<rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/>',
   pin: '<path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
@@ -654,11 +667,15 @@ function vehicleFreeAt(vid) {
   const s = settings(); let latest = null, unknown = false, trip = null;
   Object.values(S.d.trips).forEach(t => {
     if (t.vehicleId !== vid || (t.status !== 'planned' && t.status !== 'running')) return;
-    const j = (t.jobs || []).filter(x => x.unloadAt).sort((a, b) => String(a.unloadAt).localeCompare(String(b.unloadAt))).pop();
-    if (!j) unknown = true; else if (!latest || j.unloadAt > latest.unloadAt) { latest = j; trip = t; }
+    // actual "ลงของเสร็จ" time when the driver has pressed it, otherwise the planned unload time
+    const stops = tripStops(t);
+    const ends = (t.jobs || []).map(j => { const st = stops.find(x => normName(x.name) === normName(j.destination)); const done = st && st.doneAt; const at = done || j.unloadAt; return at ? { at, ms: new Date(at).getTime(), actual: !!done, dest: j.destination || '' } : null; })
+      .filter(Boolean).sort((a, b) => a.ms - b.ms);
+    const j = ends.pop();
+    if (!j) unknown = true; else if (!latest || j.ms > latest.ms) { latest = j; trip = t; }
   });
   if (unknown || !latest) return { unknown: true };
-  return { unloadAt: latest.unloadAt, dest: latest.destination || '', free: new Date(new Date(latest.unloadAt).getTime() + s.bufferHours * 3600000), trip };
+  return { unloadAt: latest.at, actual: latest.actual, dest: latest.dest, free: new Date(latest.ms + s.bufferHours * 3600000), trip };
 }
 // unload→load time matching is used only at Dairy Plus นครสวรรค์ (settings.timeMatchAt)
 const normName = x => String(x || '').replace(/\s+/g, '').toLowerCase();
@@ -923,6 +940,7 @@ PAGES.home = () => {
   });
   trips.filter(t => t.status === 'planned' || t.status === 'running').forEach(t => { const due = minDue(t.jobs || []); if (due && due < today) att.push({ st: 'crit', html: `${plate(vehicleOf(t.vehicleId))} <span>ทริป ${esc(t.no)} เลยกำหนดส่งถึงลูกค้า ${thDate(due)}</span>`, href: '#trip-' + t.id }); });
   trips.filter(t => t.status === 'planned' || t.status === 'running').forEach(t => { const late = tripStops(t).filter(st => !st.at && st.due && new Date(st.due) < new Date()); if (late.length) att.push({ st: 'crit', html: `${plate(vehicleOf(t.vehicleId))} <span>ทริป ${esc(t.no)} ยังไม่ถึง ${esc(late.map(x => x.name).join(', '))} · ต้องถึงก่อน ${dtText(late[0].due)}</span>`, href: '#trip-' + t.id }); });
+  running.forEach(t => tripStops(t).forEach(st => { if (st.at && !st.doneAt && !st.pickup && Date.now() - new Date(st.at) > 3 * 3600000) att.push({ st: 'warn', html: `${plate(vehicleOf(t.vehicleId))} <span>ถึง ${esc(st.name)} ตั้งแต่ ${hhmm(st.at)} ยังไม่กดลงของเสร็จ (ส่งงาน)</span>`, href: '#trip-' + t.id }); }));
   running.forEach(t => { const last = t.pos ? t.pos.at : t.departedAt; if (last && Date.now() - new Date(last) > s.posStaleHours * 3600000) att.push({ st: 'warn', html: `${plate(vehicleOf(t.vehicleId))} <span>ทริป ${esc(t.no)} ${t.pos ? `ไม่ได้อัปเดตตำแหน่งตั้งแต่ ${dtText(t.pos.at)}` : 'ออกรถแล้วยังไม่มีตำแหน่ง'}</span>`, href: '#trip-' + t.id }); });
   planned.forEach(t => { if (!t.notifiedAt && needsFactory(t) && t.date <= addDays(today, 1)) att.push({ st: t.date <= today ? 'serious' : 'warn', html: `${plate(vehicleOf(t.vehicleId))} <span>ทริป ${esc(t.no)} ยังไม่ได้แจ้งทะเบียนโรงงาน (โหลด ${thDate(t.date)}${t.loadAt ? ' ' + hhmm(t.loadAt) : ''})</span>`, href: '#trip-' + t.id }); });
   if (L !== 'north') { const pd = parcels.filter(p => p.dueDate && p.dueDate <= addDays(today, 1) && p.status !== 'delivered' && p.status !== 'cancel'); if (pd.length) { const late = pd.filter(p => p.dueDate < today).length; att.push({ st: late || pd.some(p => p.dueDate === today) ? 'crit' : 'warn', html: `<span>พัสดุ ${pd.length} บิลต้องถึงลูกค้าภายในพรุ่งนี้ยังไม่ส่งสำเร็จ${late ? ` (เลยกำหนดแล้ว ${late} บิล)` : ''}</span>`, href: '#parcels' }); } }
@@ -987,7 +1005,7 @@ PAGES.home = () => {
 
   <section class="sec">
     <div class="sec-h"><h2>รถกำลังวิ่ง</h2><span class="sub">${running.length ? running.length + ' คัน · ตำแหน่งล่าสุดและจุดต่อไป' : ''}</span></div>
-    <div class="list">${running.length ? running.map(t => [t, (tripStops(t).find(x => !x.at) || {}).due || '9999']).sort((x, y) => String(x[1]).localeCompare(String(y[1]))).map(x => runRow(x[0])).join('') : empty('ไม่มีรถวิ่งอยู่', 'รถที่บันทึกออกรถแล้วจะขึ้นที่นี่ พร้อมตำแหน่งล่าสุดและเวลาที่ต้องถึงปลายทาง')}</div>
+    <div class="list">${running.length ? running.map(t => [t, (tripStops(t).find(x => !stopDone(x)) || {}).due || '9999']).sort((x, y) => String(x[1]).localeCompare(String(y[1]))).map(x => runRow(x[0])).join('') : empty('ไม่มีรถวิ่งอยู่', 'รถที่บันทึกออกรถแล้วจะขึ้นที่นี่ พร้อมตำแหน่งล่าสุดและเวลาที่ต้องถึงปลายทาง')}</div>
   </section>
 
   ${L !== 'north' ? `<section class="sec">
@@ -1726,8 +1744,8 @@ function timingChip(x) {
   if (!timing || !timing.here) return chip('', `ติดทริป ${busy.no} · จับคู่เวลาได้เฉพาะงานโหลดที่ ${tm}`, 'route');
   if (timing.unknown) return chip('', `ติดทริป ${busy.no} (ยังไม่มีเวลาลงของ)`, 'route');
   if (!atTimeMatch(timing.dest)) return chip('', `ติดทริป ${busy.no} · ลงของสุดท้ายที่ ${timing.dest || '-'} ไม่ใช่ ${tm}`, 'route');
-  if (fits) return chip('good', `ว่างหลัง ${dtText(timing.free)} · ลงของ ${hhmm(timing.unloadAt)} ทริป ${timing.trip.no}`, 'clock');
-  return chip('crit', `ลงของ ${dtText(timing.unloadAt)} ชนเวลาโหลด (ต้องเผื่อ ${fmt(settings().bufferHours)} ชม.)`, 'clock');
+  if (fits) return chip('good', `ว่างหลัง ${dtText(timing.free)} · ${timing.actual ? 'ลงของเสร็จจริง' : 'นัดลงของ'} ${hhmm(timing.unloadAt)} ทริป ${timing.trip.no}`, 'clock');
+  return chip('crit', `${timing.actual ? 'ลงของเสร็จ' : 'นัดลงของ'} ${dtText(timing.unloadAt)} ชนเวลาโหลด (ต้องเผื่อ ${fmt(settings().bufferHours)} ชม.)`, 'clock');
 }
 function candRow(x, reco) {
   const { v, w, ev, busy, unavailable } = x; const sel = ui.dp.vehicleId === v.id;
@@ -1898,19 +1916,12 @@ async function savePos(t, p) {
   try { await patch('trips', t.id, { pos: e, posLog: [...(t.posLog || []).slice(-29), e] }); } catch { return 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง'; }
   toast(`บันทึกตำแหน่งแล้ว: ${placeText(e)}`);
 }
-function posGps(t) {
-  if (!('geolocation' in navigator)) { toast('เครื่องนี้อ่าน GPS ไม่ได้ ใช้วิธีวางพิกัดหรือพิมพ์ชื่ออำเภอแทน'); return; }
+async function posGps(t) {
   toast('กำลังอ่านตำแหน่ง GPS… ถ้าเครื่องถามสิทธิ์ให้กด "อนุญาต"');
-  let done = false;
-  const fail = () => { if (done) return; done = true; toast('อ่านตำแหน่ง GPS ไม่ได้ (ไม่อนุญาตหรือปิด GPS) ใช้วิธีวางพิกัดจาก Google Maps หรือพิมพ์ชื่ออำเภอแทน'); };
-  const timer = setTimeout(fail, 16000);
-  try {
-    navigator.geolocation.getCurrentPosition(async p => {
-      if (done) return; done = true; clearTimeout(timer);
-      const r = await savePos(t, { lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy), src: 'gps' });
-      if (r) toast(r); render({ force: true });
-    }, () => { clearTimeout(timer); fail(); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
-  } catch { clearTimeout(timer); fail(); }
+  const L = await getLoc(15000, 0);
+  if (!L) { toast('อ่านตำแหน่ง GPS ไม่ได้ (ไม่อนุญาตหรือปิด GPS) ใช้วิธีวางพิกัดจาก Google Maps หรือพิมพ์ชื่ออำเภอแทน'); return; }
+  const r = await savePos(S.d.trips[t.id] || t, { lat: L.lat, lng: L.lng, acc: L.acc, src: 'gps' });
+  if (r) toast(r); render({ force: true });
 }
 // southern hub = a branch site; matches "ชุมพร", "สุราษฎร์", "สาขาทุ่งสง", or a province the hub covers
 function branchFor(name) {
@@ -1937,13 +1948,15 @@ function tripStops(t) {
   });
   return out.map(st => {
     const a = (t.arr || {})[st.key] || {};
-    return { ...st, due: st.hub ? `${arriveDateOf(t)}T${s.southArriveBy}` : st.unloadAt, at: a.at || null, src: a.src || null };
+    return { ...st, due: st.hub ? `${arriveDateOf(t)}T${s.southArriveBy}` : st.unloadAt, at: a.at || null, src: a.src || null, loc: a.loc || null, doneAt: a.doneAt || null, doneLoc: a.doneLoc || null, recv: a.recv || '', photos: a.photos || {}, noPhoto: a.noPhoto || '' };
   });
 }
 function stopState(st) {
   if (st.at) {
-    if (st.due && new Date(st.at) > new Date(st.due)) return ['crit', `ถึง ${dtText(st.at)} ช้า ${durText((new Date(st.at) - new Date(st.due)) / 60000)}`];
-    return ['good', `ถึงแล้ว ${dtText(st.at)}${st.src === 'scan' ? ' (จากการยิงรับ)' : ''}`];
+    const late = st.due && new Date(st.at) > new Date(st.due) ? (new Date(st.at) - new Date(st.due)) / 60000 : 0;
+    const head = late ? `ถึง ${dtText(st.at)} ช้า ${durText(late)}` : `ถึงแล้ว ${dtText(st.at)}${st.src === 'scan' ? ' (จากการยิงรับ)' : ''}`;
+    if (st.pickup) return [late ? 'crit' : 'good', head];
+    return [late ? 'crit' : 'good', st.doneAt ? `${head} · ลงของเสร็จ ${hhmm(st.doneAt)}` : `${head} · กำลังลงของ`];
   }
   if (!st.due) return ['', st.pickup ? 'ยังไม่ถึงจุดรับ' : 'ยังไม่มีเวลานัด'];
   const left = new Date(st.due) - Date.now();
@@ -1959,22 +1972,22 @@ function posChip(t, link = true) {
   return `${chip(stale ? 'warn' : 'good', `ตอนนี้ ${placeText(p)} · ${agoText(p.at)}`, 'pin')}${link ? ` <a class="small" href="${esc(placeMapUrl(p))}" target="_blank" rel="noopener">แผนที่</a>` : ''}`;
 }
 function stopsLine(stops) {
-  return `<span class="stops">${stops.map(st => { const [c] = stopState(st); return `<span class="${st.at ? (c === 'crit' ? 'late' : 'done') : c === 'crit' ? 'late' : ''}">${st.at ? '✓' : '○'} ${esc(st.name)}</span>`; }).join('<i>→</i>')}</span>`;
+  return `<span class="stops">${stops.map(st => { const [c] = stopState(st); const d = stopDone(st); return `<span class="${c === 'crit' ? 'late' : d ? 'done' : st.at ? 'here' : ''}">${d ? '✓' : st.at ? '◉' : '○'} ${esc(st.name)}</span>`; }).join('<i>→</i>')}</span>`;
 }
 function runRow(t) {
-  const v = vehicleOf(t.vehicleId); const stops = tripStops(t); const next = stops.find(x => !x.at);
+  const v = vehicleOf(t.vehicleId); const stops = tripStops(t); const next = stops.find(x => !stopDone(x));
   const ns = next ? stopState(next) : null;
   return `<a class="row" href="#trip-${esc(t.id)}" style="text-decoration:none;color:inherit"><div class="main">
     <div class="l1">${plate(v)} ${vt(v && v.type)} ${lineBadge(tripLine(t))} <span class="small meta">ทริป ${esc(t.no)} · ${esc(driverName(t.driverId))}</span></div>
     <div class="l1 small"><b>${esc(tripOrigin(t) || 'ต้นทาง')}</b> <i class="muted">→</i> ${stopsLine(stops)}</div>
     <div class="l1">${posChip(t, false)}</div>
-    ${next ? `<div class="l1">${chip(ns[0], `ต่อไป ${next.name} · ${ns[1]}`, 'clock')}</div>` : stops.length ? `<div class="l1">${chip('good', 'ถึงครบทุกจุดแล้ว รอปิดทริป')}</div>` : ''}
+    ${next ? `<div class="l1">${chip(ns[0], `${next.at ? 'อยู่ที่' : 'ต่อไป'} ${next.name} · ${ns[1]}`, 'clock')}</div>` : stops.length ? `<div class="l1">${chip('good', 'ส่งงานครบทุกจุดแล้ว รอปิดทริป')}</div>` : ''}
   </div></a>`;
 }
 function posForm(t, compact) {
   ensureDistrictList();
   return `<form class="stack" data-form="pos" data-id="${esc(t.id)}" novalidate style="gap:8px">
-    <button type="button" class="btn ${compact ? 'primary big' : ''} block" data-act="posGps" data-id="${esc(t.id)}" ${dis()}>${icon('gps')}ส่งตำแหน่งตอนนี้ (GPS)</button>
+    <button type="button" class="btn block" data-act="posGps" data-id="${esc(t.id)}" ${dis()}>${icon('gps')}ส่งตำแหน่งตอนนี้ (GPS)</button>
     <div class="grid2">
       <div class="field"><label for="pf-loc-${esc(t.id)}">หรือวางพิกัด / ลิงก์ Google Maps</label><input id="pf-loc-${esc(t.id)}" name="loc" inputmode="url" autocomplete="off" placeholder="เช่น 9.1382, 99.3215"></div>
       <div class="field"><label for="pf-place-${esc(t.id)}">หรือพิมพ์ชื่ออำเภอ</label><input id="pf-place-${esc(t.id)}" name="place" list="th-districts" autocomplete="off" placeholder="เช่น ทุ่งสง"><span class="hint">พิมพ์แล้วเลือกจากรายการ (ใช้ตอนโทรถามคนขับ)</span></div>
@@ -1984,9 +1997,13 @@ function posForm(t, compact) {
 }
 function stopRows(t, stops, canMark) {
   return stops.map(st => {
-    const [c, txt] = stopState(st);
-    return `<div class="row" style="align-items:center"><div class="main"><div class="l1"><b>${esc(st.name)}</b> ${st.hub ? '<span class="small muted">สาขาภาคใต้</span>' : st.pickup ? '<span class="small muted">จุดรับสินค้า</span>' : ''}</div><div class="l1">${chip(c, txt, st.at ? (c === 'crit' ? 'alert' : 'check') : 'clock')}</div></div>
-      ${canMark ? (st.at ? `<button class="btn ghost sm" data-act="stopUndo" data-id="${esc(t.id)}" data-k="${esc(st.key)}" ${dis()}>ยกเลิก</button>` : `<button class="btn sm primary" data-act="stopArrive" data-id="${esc(t.id)}" data-k="${esc(st.key)}" ${dis()}>${icon('check')}ถึงแล้ว</button>`) : ''}</div>`;
+    const [c, txt] = stopState(st); const d = stopDone(st);
+    const a = `data-id="${esc(t.id)}" data-k="${esc(st.key)}" ${dis()}`;
+    const btns = !canMark ? '' : !st.at ? `<button class="btn sm primary" data-act="stopArrive" ${a}>${icon('check')}ถึงแล้ว</button>`
+      : !d ? `<button class="btn sm primary" data-act="podOpen" ${a}>${icon('camera')}ลงของเสร็จ</button><button class="btn ghost sm" data-act="stopUndo" ${a}>ยกเลิกเวลาถึง</button>`
+      : `<button class="btn ghost sm" data-act="stopUndo" ${a}>ยกเลิก</button>`;
+    return `<div class="row" style="align-items:center"><div class="main"><div class="l1"><b>${esc(st.name)}</b> ${st.hub ? '<span class="small muted">สาขาภาคใต้</span>' : st.pickup ? '<span class="small muted">จุดรับสินค้า</span>' : ''}</div><div class="l1">${chip(c, txt, st.at ? (c === 'crit' ? 'alert' : 'check') : 'clock')}</div>${podInfo(st)}</div>
+      ${btns ? `<div class="stack" style="gap:6px;flex:none">${btns}</div>` : ''}</div>`;
   }).join('');
 }
 function trackCard(t) {
@@ -2008,23 +2025,176 @@ function myTripCard() {
   const mine = Object.values(S.d.trips).filter(t => (t.status === 'running' || t.status === 'planned') && ((f.driverId && t.driverId === f.driverId) || (f.vehicleId && t.vehicleId === f.vehicleId)))
     .sort((a, b) => (a.status === 'running' ? 0 : 1) - (b.status === 'running' ? 0 : 1) || String(a.date).localeCompare(String(b.date)))[0];
   if (!mine) return '';
-  const t = mine; const v = vehicleOf(t.vehicleId); const stops = tripStops(t); const next = stops.find(x => !x.at);
+  const t = mine; const v = vehicleOf(t.vehicleId); const stops = tripStops(t); const next = stops.find(x => !stopDone(x));
   const ns = next ? stopState(next) : null;
   return `<section class="card pad stack">
     <div class="sec-h"><h2>ทริปของฉัน</h2>${statusChip(TRIP_STATUS, t.status)}</div>
     <div class="l1">${plate(v, 'lg')} <span class="mono">${esc(t.no)}</span></div>
     <div class="small"><b>${esc(tripOrigin(t) || 'ต้นทาง')}</b> <i class="muted">→</i> ${stopsLine(stops)}</div>
-    ${next ? `<div class="note ${ns[0] === 'crit' ? 'crit' : ns[0] === 'warn' ? 'warn' : ''}">จุดต่อไป <b>${esc(next.name)}</b> · ${esc(ns[1])}</div>` : ''}
-    ${t.status === 'running' ? `${t.pos ? `<div class="l1">${posChip(t)}</div>` : ''}
+    ${next ? `<div class="note ${ns[0] === 'crit' ? 'crit' : ns[0] === 'warn' ? 'warn' : ''}">${next.at ? 'อยู่ที่' : 'จุดต่อไป'} <b>${esc(next.name)}</b> · ${esc(ns[1])}</div>` : stops.length ? `<div class="note good">ส่งงานครบทุกจุดแล้ว</div>` : ''}
+    ${t.status === 'running' ? `${next ? (!next.at ? `<button class="btn primary big block" data-act="stopArrive" data-id="${esc(t.id)}" data-k="${esc(next.key)}" ${dis()}>${icon('check')}ถึง ${esc(next.name)} แล้ว</button>` : next.pickup ? '' : `<button class="btn primary big block" data-act="podOpen" data-id="${esc(t.id)}" data-k="${esc(next.key)}" ${dis()}>${icon('camera')}ลงของเสร็จ / ส่งงาน ${esc(next.name)}</button>`) : ''}
+      <p class="small muted">กด "ถึงแล้ว" เมื่อถึงจุดส่ง และ "ลงของเสร็จ" เมื่อลงของหมด (ถ่ายรูปบิล สินค้า รถว่าง และให้ผู้รับเซ็น) ระบบจับตำแหน่ง GPS ตอนกดให้</p>
+      ${t.pos ? `<div class="l1">${posChip(t)}</div>` : ''}
       ${posForm(t, true)}
-      ${next ? `<button class="btn block" data-act="stopArrive" data-id="${esc(t.id)}" data-k="${esc(next.key)}" ${dis()}>${icon('check')}ถึง ${esc(next.name)} แล้ว</button>` : ''}
-      <p class="small muted">กดส่งตำแหน่งเมื่อจอดพักหรือผ่านจังหวัด ฝ่ายจัดรถจะเห็นว่ารถถึงอำเภอไหนแล้ว</p>` : '<p class="small muted">รอออกรถ เมื่อออกรถแล้วกดส่งตำแหน่งได้จากหน้านี้</p>'}
+      <p class="small muted">ระหว่างทางกดส่งตำแหน่งเมื่อจอดพักหรือผ่านจังหวัด ฝ่ายจัดรถจะเห็นว่ารถถึงอำเภอไหนแล้ว</p>` : '<p class="small muted">รอออกรถ เมื่อออกรถแล้วกดส่งตำแหน่งได้จากหน้านี้</p>'}
   </section>`;
 }
-async function markStop(t, key, src) {
-  const arr = { ...(t.arr || {}) }; if (arr[key]) return;
-  arr[key] = { at: new Date().toISOString(), by: S.uid || null, src };
-  await patch('trips', t.id, { arr });
+/* ---------- ส่งงาน: arrival + unload done with GPS, photos and the receiver's signature ---------- */
+const POD_SLOTS = [['bill', 'รูปบิล / ใบส่งของ'], ['goods', 'รูปสินค้าที่ลง'], ['empty', 'รูปรถว่างหลังลงของ']];
+const POD_LABEL = { bill: 'รูปบิล / ใบส่งของ', goods: 'รูปสินค้าที่ลง', empty: 'รูปรถว่างหลังลงของ', sign: 'ลายเซ็นผู้รับ' };
+const stopDone = st => (st.pickup ? !!st.at : !!st.doneAt);
+const photoSrc = ref => (String(ref).startsWith('data:') ? ref : '/_blob/' + ref);
+function getLoc(ms = 6000, maxAge = 30000) {
+  return new Promise(res => {
+    if (!('geolocation' in navigator)) { res(null); return; }
+    let done = false; const fin = v => { if (done) return; done = true; clearTimeout(tm); res(v); };
+    const tm = setTimeout(() => fin(null), ms);
+    try { navigator.geolocation.getCurrentPosition(p => fin({ lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy) }), () => fin(null), { enableHighAccuracy: true, timeout: ms, maximumAge: maxAge }); } catch { fin(null); }
+  });
+}
+function locEntry(L, src) {
+  if (!L) return null;
+  const pl = thPlace(L.lat, L.lng) || {};
+  return { at: new Date().toISOString(), lat: L.lat, lng: L.lng, acc: L.acc ?? null, district: pl.district || '', province: pl.province || '', approx: !!pl.approx, src, by: S.uid || null };
+}
+let ASSETS;
+async function assetsNs() {
+  if (ASSETS !== undefined) return ASSETS;
+  try { ASSETS = window.claude && typeof window.claude.use === 'function' ? await window.claude.use('assets') : null; } catch { ASSETS = null; }
+  return ASSETS;
+}
+async function shrinkImage(file, max, q) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const k = Math.min(1, max / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+    const b = await new Promise(res => c.toBlob(res, 'image/jpeg', q));
+    if (!b) throw new Error('encode');
+    return b;
+  } finally { URL.revokeObjectURL(url); }
+}
+const blobToDataUrl = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(b); });
+async function markStop(t, key, src, L) {
+  const arr = { ...(t.arr || {}) }; if (arr[key] && arr[key].at) return;
+  const e = L ? locEntry(L, 'gps') : null;
+  arr[key] = { ...(arr[key] || {}), at: new Date().toISOString(), by: S.uid || null, src, loc: e };
+  const part = { arr }; if (e) { part.pos = e; part.posLog = [...(t.posLog || []).slice(-29), e]; }
+  await patch('trips', t.id, part);
+}
+function podInfo(st) {
+  const bits = [];
+  const e = st.doneLoc || st.loc;
+  if (e) bits.push(`<span class="small meta">${icon('pin')} ${st.doneLoc ? 'ส่งงานที่' : 'ถึงที่'} ${esc(placeText(e))} <a href="${esc(placeMapUrl(e))}" target="_blank" rel="noopener">แผนที่</a></span>`);
+  else if (st.at && !st.pickup) bits.push(`<span class="small muted">${icon('pin')} ไม่มีพิกัดตอนกด (อ่าน GPS ไม่ได้)</span>`);
+  if (st.doneAt && st.recv) bits.push(`<span class="small meta">ผู้รับ ${esc(st.recv)}</span>`);
+  const ph = Object.entries(st.photos || {});
+  if (ph.length) bits.push(`<div class="podthumbs">${ph.map(([k, ref]) => { const src = photoSrc(ref); const lab = POD_LABEL[k] || k; const img = `<img src="${esc(src)}" alt="${esc(lab)}" loading="lazy">`; return `<figure>${String(ref).startsWith('data:') ? img : `<a href="${esc(src)}" target="_blank" rel="noopener">${img}</a>`}<figcaption>${esc(lab)}</figcaption></figure>`; }).join('')}</div>`);
+  else if (st.doneAt) bits.push(chip('warn', st.noPhoto ? `ไม่มีรูป · ${st.noPhoto}` : 'ไม่มีรูปแนบ', 'alert'));
+  return bits.length ? `<div class="stack" style="gap:4px;margin-top:4px">${bits.join('')}</div>` : '';
+}
+let POD = null;
+function openPod(t, key) {
+  const st = tripStops(t).find(x => x.key === key); if (!st) return;
+  if (POD) Object.values(POD.photos).forEach(p => p.url && URL.revokeObjectURL(p.url));
+  POD = { tripId: t.id, key, photos: {}, ink: 0, loc: undefined, locP: getLoc(15000) };
+  const mine = POD;
+  mine.locP.then(L => { if (POD !== mine) return; mine.loc = L; const el = $('#pod-loc'); if (el) el.innerHTML = L ? chip('good', `ได้ตำแหน่ง ${placeText(locEntry(L, 'gps'))}`, 'pin') : chip('warn', 'อ่าน GPS ไม่ได้ จะบันทึกเวลาโดยไม่มีพิกัด', 'pin'); });
+  const v = vehicleOf(t.vehicleId);
+  const slot = (k, l) => `<label class="podslot" id="pod-slot-${k}"><input type="file" accept="image/*" data-pod="${k}" hidden><span class="thumb" id="pod-ph-${k}">${icon('camera')}</span><span class="small"><b>${esc(l)}</b><br><span class="muted" id="pod-st-${k}">แตะเพื่อถ่ายรูป</span></span></label>`;
+  openSheet({
+    title: `ส่งงาน · ${st.name}`, submit: 'ยืนยันลงของเสร็จ', onSubmit: fd => submitPod(fd),
+    body: `<div class="stack">
+      <p class="meta">${esc(v ? v.plate : '')} · ทริป ${esc(t.no)}${st.at ? ` · ถึง ${dtText(st.at)}` : ''}</p>
+      <div class="note warn small" id="pod-note" hidden></div>
+      <div class="podgrid">${POD_SLOTS.map(([k, l]) => slot(k, l)).join('')}</div>
+      <div class="field"><span class="lbl req">ลายเซ็นผู้รับ <span class="muted" style="font-weight:400">(ให้ผู้รับเซ็นด้วยนิ้วในกรอบ)</span></span>
+        <canvas id="pod-sig" class="sigpad" width="640" height="220" aria-label="ช่องให้ผู้รับเซ็นชื่อด้วยนิ้ว"></canvas>
+        <div class="rowflex"><button type="button" class="btn sm ghost" data-act="sigClear">ล้างลายเซ็น</button><label class="btn sm">${icon('camera')}หรือถ่ายรูปลายเซ็น<input type="file" accept="image/*" data-pod="sign" hidden></label><span class="small muted" id="pod-st-sign"></span></div></div>
+      <div class="field"><label for="pod-recv">ชื่อผู้รับสินค้า</label><input id="pod-recv" name="recv" autocomplete="off" placeholder="เช่น คุณสมชาย แผนกรับสินค้า"></div>
+      <div id="pod-loc">${chip('', 'กำลังอ่านตำแหน่ง GPS…', 'pin')}</div>
+      <div id="pod-prog" class="small muted"></div>
+    </div>`,
+  });
+  initSig();
+  if (S.backend === 'db' && !S.demo) assetsNs().then(a => { if (a || POD !== mine) return; const n = $('#pod-note'); if (n) { n.hidden = false; n.textContent = 'บัญชีนี้แนบรูปไม่ได้ (ต้องมีสิทธิ์บันทึกในลิงก์นี้) ระบบจะบันทึกเวลาและตำแหน่งอย่างเดียว'; } });
+}
+function initSig() {
+  const c = $('#pod-sig'); if (!c) return;
+  const g = c.getContext('2d');
+  const reset = () => { g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.strokeStyle = '#111'; g.lineWidth = 3.4; g.lineCap = 'round'; g.lineJoin = 'round'; };
+  reset(); c._reset = reset;
+  let last = null;
+  const pt = e => { const r = c.getBoundingClientRect(); return [(e.clientX - r.left) * c.width / r.width, (e.clientY - r.top) * c.height / r.height]; };
+  c.addEventListener('pointerdown', e => { last = pt(e); try { c.setPointerCapture(e.pointerId); } catch {} e.preventDefault(); });
+  c.addEventListener('pointermove', e => { if (!last) return; const p = pt(e); g.beginPath(); g.moveTo(last[0], last[1]); g.lineTo(p[0], p[1]); g.stroke(); if (POD) POD.ink += Math.hypot(p[0] - last[0], p[1] - last[1]); last = p; });
+  ['pointerup', 'pointercancel'].forEach(n => c.addEventListener(n, () => (last = null)));
+}
+function clearSig() { const c = $('#pod-sig'); if (c && c._reset) c._reset(); if (POD) POD.ink = 0; }
+async function podPick(inp) {
+  const f = inp.files && inp.files[0]; const k = inp.dataset.pod; const mine = POD; if (!f || !mine) return;
+  const stEl = $('#pod-st-' + k); if (stEl) stEl.textContent = 'กำลังย่อรูป…';
+  try {
+    const shared = S.backend === 'db' && !S.demo;
+    const blob = await shrinkImage(f, shared ? 1600 : 640, shared ? 0.78 : 0.6);
+    if (POD !== mine) return;
+    if (mine.photos[k]) URL.revokeObjectURL(mine.photos[k].url);
+    mine.photos[k] = { blob, url: URL.createObjectURL(blob) };
+    const ph = $('#pod-ph-' + k); if (ph) ph.innerHTML = `<img src="${mine.photos[k].url}" alt="">`;
+    if (stEl) stEl.textContent = k === 'sign' ? 'ได้รูปลายเซ็นแล้ว' : `${fmt(blob.size / 1024)} KB · แตะเพื่อถ่ายใหม่`;
+    $('#pod-slot-' + k) && $('#pod-slot-' + k).classList.add('ok');
+  } catch { if (stEl) stEl.textContent = 'อ่านรูปนี้ไม่ได้ ลองถ่ายใหม่'; }
+  inp.value = '';
+}
+function podUploadErr(e) {
+  const c = e && e.code;
+  if (c === 'too_large') return 'รูปใหญ่เกินไป ลองถ่ายใหม่';
+  if (c === 'quota_or_state') return 'พื้นที่เก็บรูปของลิงก์นี้เต็ม หรือลิงก์ถูกปิดอยู่ แจ้งฝ่ายจัดรถ';
+  if (c === 'rate_limited') return 'ส่งถี่เกินไป รอสักครู่แล้วกดยืนยันอีกครั้ง';
+  if (c === 'upstream_auth') return 'กรุณาโหลดหน้าใหม่หรือเข้าสู่ระบบอีกครั้ง';
+  if (c === 'not_granted' || c === 'capability_disabled' || c === 'capability_removed') return 'หน้านี้แนบรูปไม่ได้ แจ้งฝ่ายจัดรถ';
+  return 'อัปโหลดรูปไม่สำเร็จ ลองกดยืนยันอีกครั้ง';
+}
+async function uploadPhoto(assets, blob) {
+  try { return await assets.upload(blob, { type: blob.type || 'image/jpeg' }); }
+  catch (e) { if (e && e.code === 'store_unavailable') { await new Promise(r => setTimeout(r, 900)); return assets.upload(blob, { type: blob.type || 'image/jpeg' }); } throw e; }
+}
+async function submitPod(fd) {
+  const P = POD; if (!P) return 'ปิดแล้วเปิดหน้าส่งงานใหม่อีกครั้ง';
+  const t0 = S.d.trips[P.tripId]; if (!t0) return 'ไม่พบทริปนี้';
+  const shared = S.backend === 'db' && !S.demo;
+  const assets = shared ? await assetsNs() : null;
+  const canUpload = !shared || !!assets;
+  const hasSig = !!P.photos.sign || P.ink > 40;
+  const miss = POD_SLOTS.filter(([k]) => !P.photos[k]).map(([, l]) => l);
+  if (!hasSig) miss.push('ลายเซ็นผู้รับ');
+  if (canUpload && miss.length) return `ยังขาด: ${miss.join(', ')}`;
+  const prog = $('#pod-prog'); const say = m => { if (prog) prog.textContent = m; };
+  let sigBlob = P.photos.sign ? P.photos.sign.blob : null;
+  if (!sigBlob && hasSig) sigBlob = await new Promise(r => $('#pod-sig').toBlob(r, 'image/png'));
+  const items = [...POD_SLOTS.map(([k]) => [k, P.photos[k] && P.photos[k].blob]), ['sign', sigBlob]].filter(x => x[1]);
+  const photos = {};
+  if (canUpload) {
+    let i = 0;
+    for (const [k, b] of items) {
+      say(`กำลังส่งรูป ${++i}/${items.length}…`);
+      try { photos[k] = shared ? (await uploadPhoto(assets, b)).id : await blobToDataUrl(b); }
+      catch (e) { say(''); return podUploadErr(e); }
+    }
+  }
+  say('กำลังอ่านตำแหน่ง…');
+  const L = P.loc !== undefined ? P.loc : await Promise.race([P.locP, new Promise(r => setTimeout(() => r(null), 5000))]);
+  const e = locEntry(L, 'gps');
+  const t = S.d.trips[P.tripId] || t0;
+  const arr = { ...(t.arr || {}) }; const now = new Date().toISOString(); const prev = arr[P.key] || {};
+  arr[P.key] = { ...prev, at: prev.at || now, by: prev.by || S.uid || null, src: prev.src || (role === 'driver' ? 'driver' : 'manual'), loc: prev.loc || e, doneAt: now, doneBy: S.uid || null, doneLoc: e, recv: String(fd.recv || '').trim(), photos };
+  if (!canUpload) arr[P.key].noPhoto = 'แนบรูปไม่ได้ในหน้านี้'; else delete arr[P.key].noPhoto;
+  const part = { arr }; if (e) { part.pos = e; part.posLog = [...(t.posLog || []).slice(-29), e]; }
+  try { await patch('trips', t.id, part); } catch { say(''); return 'บันทึกไม่สำเร็จ ลองใหม่อีกครั้ง'; }
+  Object.values(P.photos).forEach(p => p.url && URL.revokeObjectURL(p.url));
+  POD = null;
+  toast(e ? `ส่งงานแล้ว · ${placeText(e)}` : 'ส่งงานแล้ว (อ่าน GPS ไม่ได้ จึงไม่มีพิกัด)');
 }
 PAGES.trips = () => {
   const tab = ui.trips.tab;
@@ -2052,7 +2222,7 @@ function tripRow(t) {
     <div class="l1"><b class="mono">${esc(t.no)}</b> ${statusChip(TRIP_STATUS, t.status)} ${lineBadge(tripLine(t))} <span class="small muted">ออก ${thDate(t.date)}${t.loadAt ? ' โหลด ' + hhmm(t.loadAt) : ''}</span> ${dueChip(minDue(t.jobs || []), t.status === 'closed' || t.status === 'cancel')} ${t.status === 'planned' && !t.notifiedAt && needsFactory(t) ? chip('warn', 'ยังไม่แจ้งทะเบียนโรงงาน') : ''}</div>
     <div class="l1">${plate(v)} ${vt(v && v.type)} <span class="meta">${esc(driverName(t.driverId))}</span></div>
     <div class="l1">${(t.jobs || []).map(j => `${kindB(j.kind)} <span class="meta">${esc(j.destination || '-')}</span>`).join(' <span class="muted">·</span> ')}</div>
-    ${t.status === 'running' ? (() => { const nx = tripStops(t).find(x => !x.at); const ns = nx ? stopState(nx) : null; return `<div class="l1">${posChip(t, false)}${nx ? ' ' + chip(ns[0], `ต่อไป ${nx.name} · ${ns[1]}`, 'clock') : ''}</div>`; })() : ''}
+    ${t.status === 'running' ? (() => { const nx = tripStops(t).find(x => !stopDone(x)); const ns = nx ? stopState(nx) : null; return `<div class="l1">${posChip(t, false)}${nx ? ' ' + chip(ns[0], `${nx.at ? 'อยู่ที่' : 'ต่อไป'} ${nx.name} · ${ns[1]}`, 'clock') : ''}</div>`; })() : ''}
     <div class="small meta num">${c.actual !== null ? `${fmt(c.actual)} กม.` : c.std !== null ? `Standard ${fmt(c.std)} กม.` : ''} · รายได้ ${money(c.revenue)}${c.parcels.length ? ` · พัสดุ ${c.parcels.length} บิล` : ''}${t.status === 'closed' ? ` · ต้นทุน ${money(c.cost)}` : ''}</div>
   </div></a>`;
 }
@@ -2171,6 +2341,7 @@ const FIELDS = {
     { k: 'capVolumeCbm', label: 'ปริมาตร (คิว)', type: 'number' },
     { k: 'capPallets', label: 'จำนวนพาเลท', type: 'number' },
     { k: 'tareKg', label: 'น้ำหนักรถเปล่า หัว+หาง (กก.)', type: 'number', hint: 'ใช้คำนวณน้ำหนักรวมตามกฎหมาย 25 / 45 / 50 ตัน' },
+    { k: 'gpsProvider', label: 'ระบบ GPS ติดรถ', type: 'select', opts: [['', '— ไม่ระบุ —'], ['เทเลเทค', 'เทเลเทค (รถบรรทุก)'], ['Forth Tracking', 'Forth Tracking (รถเล็ก)'], ['อื่นๆ', 'อื่นๆ'], ['ไม่มี', 'ไม่มี GPS']] },
     { k: 'currentKm', label: 'เลขไมล์ปัจจุบัน (Current KM)', type: 'number' },
     { k: 'lastServiceKm', label: 'เลขไมล์เข้าศูนย์ล่าสุด', type: 'number' },
     { k: 'note', label: 'หมายเหตุ', type: 'textarea' },
@@ -2264,7 +2435,7 @@ PAGES.master = () => {
 };
 function masterRow(tab, x) {
   const btns = `<div class="actions"><button class="btn sm" data-act="edit" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>แก้ไข</button><button class="btn sm danger" data-act="delete" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>ลบ</button></div>`;
-  if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${lineBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">รับ ${fmt(num(payloadCap(x)))} กก.${num(x.tareKg) ? ` · รถเปล่า ${fmt(num(x.tareKg))} กก.` : ''} · ${fmt(num(x.capVolumeCbm))} คิว · ${fmt(num(x.capPallets))} พาเลท · ไมล์ ${fmt(num(x.currentKm))} · ${esc(m.label)}</div>${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
+  if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${lineBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">รับ ${fmt(num(payloadCap(x)))} กก.${num(x.tareKg) ? ` · รถเปล่า ${fmt(num(x.tareKg))} กก.` : ''}${x.gpsProvider ? ` · GPS ${esc(x.gpsProvider)}` : ''} · ${fmt(num(x.capVolumeCbm))} คิว · ${fmt(num(x.capPallets))} พาเลท · ไมล์ ${fmt(num(x.currentKm))} · ${esc(m.label)}</div>${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
   if (tab === 'drivers') return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> ${x.nickname ? `<span class="meta">(${esc(x.nickname)})</span>` : ''} ${x.active === false ? chip('', 'พัก / ออกแล้ว') : ''}</div><div class="small meta">${x.phone ? esc(x.phone) : 'ไม่มีเบอร์โทร'}</div>${btns}</div></div>`;
   if (tab === 'sites') { const pinned = x.lat !== null && x.lat !== undefined; const ck = CHECKIN_KINDS.includes(x.kind); return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> <span class="small muted">${esc(SITE_KIND[x.kind] || '')}</span> ${lineBadge(x.line)} ${ck ? (pinned ? chip('good', 'ปักหมุดแล้ว', 'pin') : chip('warn', 'ยังไม่ปักหมุด', 'pin')) : ''} ${x.operator ? chip(x.operator === 'Partner' ? '' : 'info', x.operator === 'SSC' ? 'กระจายโดยรถบริษัท' : x.operator === 'Partner' ? 'กระจายโดย Partner' : 'รถบริษัท + Partner') : ''}</div>${x.aliases ? `<div class="small meta">ชื่อเรียกหน้างาน: ${esc(x.aliases)}</div>` : ''}${x.backhaulCutoff ? `<div class="small meta">ตัดรอบรถมีงาน Backhaul ${esc(x.backhaulCutoff)} น.</div>` : ''}${x.provinces ? `<div class="small meta">ดูแลจังหวัด: ${esc(x.provinces)}</div>` : ''}${ck ? `<div class="small meta num">${pinned ? `${(+x.lat).toFixed(5)}, ${(+x.lng).toFixed(5)} · รัศมี ${fmt(num(x.radiusM) || settings().defaultRadiusM)} ม. · ${locLink(x)}` : 'วางพิกัดจาก Google Maps ในหน้าแก้ไข'}</div>` : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
   return `<div class="row"><div class="main"><div class="l1">${kindB(x.kind)} <b>${esc(x.name)}</b> ${lineBadge(x.line)}</div><div class="small meta num">${esc(x.origin || '–')} → ${esc(x.destination || '–')} · Standard ${num(x.standardKm) ? fmt(num(x.standardKm)) + ' กม.' : 'ยังไม่มี'} · เบี้ยเลี้ยง ${money(num(x.allowance))} · ทางด่วน ${money(num(x.toll))}</div>${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`;
@@ -2322,7 +2493,7 @@ const normPlate = p => String(p || '').replace(/[\s\-.]/g, '').toLowerCase();
 
 /* ---------- import (paste from Excel) ---------- */
 const IMPORT = {
-  vehicles: { key: 'plate', cols: { plate: ['ทะเบียนหลัก(หัว)', 'ทะเบียนหลัก', 'ทะเบียนหัว', 'ทะเบียน', 'plate'], trailerPlate: ['ทะเบียนหาง', 'หาง', 'trailer'], trailerType: ['ประเภทหาง', 'trailertype'], type: ['ประเภท(ล้อ)', 'ประเภท', 'ประเภทรถ', 'ล้อ', 'type'], line: ['สาย', 'line'], ownership: ['เจ้าของ(SSC/Partner)', 'เจ้าของ', 'ownership'], partner: ['ชื่อPartner', 'partner', 'สาขา'], capWeightKg: ['รับน้ำหนัก(กก.)', 'รับน้ำหนัก', 'น้ำหนัก', 'capweight'], tareKg: ['น้ำหนักรถเปล่า(กก.)', 'น้ำหนักรถเปล่า', 'น้ำหนักรถ', 'tare'], capVolumeCbm: ['ปริมาตร(คิว)', 'ปริมาตร', 'คิว', 'volume'], capPallets: ['พาเลท', 'pallets'], currentKm: ['เลขไมล์ปัจจุบัน', 'ไมล์ปัจจุบัน', 'currentkm'], lastServiceKm: ['ไมล์เข้าศูนย์ล่าสุด', 'เลขไมล์เข้าศูนย์ล่าสุด', 'lastservicekm'] } },
+  vehicles: { key: 'plate', cols: { plate: ['ทะเบียนหลัก(หัว)', 'ทะเบียนหลัก', 'ทะเบียนหัว', 'ทะเบียน', 'plate'], trailerPlate: ['ทะเบียนหาง', 'หาง', 'trailer'], trailerType: ['ประเภทหาง', 'trailertype'], type: ['ประเภท(ล้อ)', 'ประเภท', 'ประเภทรถ', 'ล้อ', 'type'], line: ['สาย', 'line'], ownership: ['เจ้าของ(SSC/Partner)', 'เจ้าของ', 'ownership'], partner: ['ชื่อPartner', 'partner', 'สาขา'], capWeightKg: ['รับน้ำหนัก(กก.)', 'รับน้ำหนัก', 'น้ำหนัก', 'capweight'], gpsProvider: ['ระบบGPS', 'GPS', 'gps'], tareKg: ['น้ำหนักรถเปล่า(กก.)', 'น้ำหนักรถเปล่า', 'น้ำหนักรถ', 'tare'], capVolumeCbm: ['ปริมาตร(คิว)', 'ปริมาตร', 'คิว', 'volume'], capPallets: ['พาเลท', 'pallets'], currentKm: ['เลขไมล์ปัจจุบัน', 'ไมล์ปัจจุบัน', 'currentkm'], lastServiceKm: ['ไมล์เข้าศูนย์ล่าสุด', 'เลขไมล์เข้าศูนย์ล่าสุด', 'lastservicekm'] } },
   drivers: { key: 'name', cols: { name: ['ชื่อ-นามสกุล', 'ชื่อนามสกุล', 'ชื่อ', 'name'], nickname: ['ชื่อเล่น', 'nickname'], phone: ['เบอร์โทร', 'โทร', 'phone'] } },
   sites: { key: 'name', cols: { name: ['ชื่อจุด', 'ชื่อ', 'name'], aliases: ['ชื่อเรียกหน้างาน', 'alias'], coords: ['พิกัด', 'coords', 'latlng'], radiusM: ['รัศมี(ม.)', 'รัศมี', 'radius'], line: ['สาย', 'line'] } },
   routes: { key: 'name', cols: { name: ['ชื่อเส้นทาง', 'เส้นทาง', 'name'], kind: ['ประเภทงาน', 'ประเภท', 'kind'], line: ['สาย', 'line'], origin: ['ต้นทาง', 'origin'], destination: ['ปลายทาง', 'destination'], standardKm: ['StandardKM', 'ระยะทาง', 'กม.', 'km'], allowance: ['เบี้ยเลี้ยง', 'allowance'], toll: ['ทางด่วน', 'ค่าทางด่วน', 'toll'] } },
@@ -2365,7 +2536,7 @@ function parseImport(entity, text) {
   return { rows, mapped: Object.keys(colMap), unknown: t.headers.filter((h, i) => !Object.values(colMap).includes(i)) };
 }
 const TEMPLATE = {
-  vehicles: ['ทะเบียนหลัก(หัว)', 'ทะเบียนหาง', 'ประเภทหาง', 'ประเภท(ล้อ)', 'สาย', 'เจ้าของ(SSC/Partner)', 'ชื่อPartner', 'รับน้ำหนัก(กก.)', 'ปริมาตร(คิว)', 'พาเลท', 'น้ำหนักรถเปล่า(กก.)', 'เลขไมล์ปัจจุบัน', 'ไมล์เข้าศูนย์ล่าสุด'],
+  vehicles: ['ทะเบียนหลัก(หัว)', 'ทะเบียนหาง', 'ประเภทหาง', 'ประเภท(ล้อ)', 'สาย', 'เจ้าของ(SSC/Partner)', 'ชื่อPartner', 'รับน้ำหนัก(กก.)', 'ปริมาตร(คิว)', 'พาเลท', 'น้ำหนักรถเปล่า(กก.)', 'ระบบGPS', 'เลขไมล์ปัจจุบัน', 'ไมล์เข้าศูนย์ล่าสุด'],
   drivers: ['ชื่อ-นามสกุล', 'ชื่อเล่น', 'เบอร์โทร'],
   sites: ['ชื่อจุด', 'สาย', 'ชื่อเรียกหน้างาน', 'พิกัด', 'รัศมี(ม.)'],
   routes: ['ชื่อเส้นทาง', 'ประเภทงาน', 'สาย', 'ต้นทาง', 'ปลายทาง', 'StandardKM', 'เบี้ยเลี้ยง', 'ทางด่วน'],
@@ -2555,13 +2726,15 @@ PAGES.pending = () => {
       <li><b>ลาเบล:</b> 100 × 75 มม.</li>
       <li><b>เวลาเข้าสาขา:</b> ทุกสาขาภาคใต้ต้องถึงก่อนประมาณ 07:00 น. (ค่าเริ่มต้นคือเช้าวันถัดจากวันออกรถ แก้วันได้ในทริป)</li>
       <li><b>รถกำลังวิ่ง:</b> ต้องเห็นว่าวิ่งจากไหนไปไหน ตอนนี้ถึงอำเภอ/จังหวัดไหนแล้ว</li>
+      <li><b>ส่งงาน:</b> ทุกจุดคนขับกด "ถึงแล้ว" และ "ลงของเสร็จ" ระบบจับตำแหน่งตอนกด ลงของเสร็จต้องถ่ายรูปบิล รูปสินค้า รูปรถว่าง และลายเซ็นผู้รับ · ที่ Dairy Plus ใช้เวลาลงของเสร็จจริง + 2 ชม. (ลงเร็วได้โหลดเร็ว)</li>
+      <li><b>GPS ติดรถ:</b> รถบรรทุกใช้เทเลเทค รถเล็กใช้ Forth Tracking และให้คนขับกดส่งจากมือถือด้วย</li>
     </ol></div></section>
   <section class="sec"><h2>เรื่องที่ยังต้องถาม</h2>
     <div class="card pad doc"><ol>
       <li>งาน SC Standard Can รับกระป๋องที่ไหน (ต้นทางก่อนไปลำปาง)</li>
       <li>แจ้งทะเบียนโรงงานผ่านช่องทางไหน (กลุ่ม LINE / อีเมล / โทร) จะได้ทำข้อความให้ตรงรูปแบบ</li>
       <li>น้ำหนักรถเปล่า (หัว + หาง) ของแต่ละคัน ส่งมาพร้อมไฟล์ทะเบียนได้ไหม</li>
-      <li>รถมี GPS ติดรถ (ระบบ GPS ตามกรมการขนส่งทางบก) ของผู้ให้บริการเจ้าไหน ถ้ามีจะต่อดึงตำแหน่งอัตโนมัติได้ ตอนนี้ใช้คนขับกดส่งตำแหน่งจากมือถือ</li>
+      <li>ลิงก์เว็บไซต์ GPS เทเลเทค และ Forth Tracking (เฮียจะส่งมาให้ดู ไม่ต้องส่งรหัสผ่าน) จะได้ดูว่าดึงตำแหน่งเข้าระบบได้ทางไหน</li>
     </ol></div></section>
   <section class="sec"><h2>ระบบอื่นที่จะทำต่อ</h2>
     <div class="card pad doc"><ul>
@@ -2612,8 +2785,27 @@ const ACT = {
   homeLine: el => { ui.home.line = el.dataset.v; render({ force: true }); },
   homeAllAtt: () => { ui.home.allAtt = !ui.home.allAtt; render({ force: true }); },
   posGps: el => { const t = S.d.trips[el.dataset.id]; if (t) posGps(t); },
-  stopArrive: async el => { const t = S.d.trips[el.dataset.id]; if (!t) return; try { await markStop(t, el.dataset.k, role === 'driver' ? 'driver' : 'manual'); } catch { return; } toast('บันทึกเวลาถึงแล้ว'); render({ force: true }); },
-  stopUndo: async el => { const t = S.d.trips[el.dataset.id]; if (!t) return; const arr = { ...(t.arr || {}) }; delete arr[el.dataset.k]; try { await patch('trips', t.id, { arr }); } catch { return; } render({ force: true }); },
+  stopArrive: async el => {
+    const id = el.dataset.id, k = el.dataset.k; if (!S.d.trips[id]) return;
+    el.disabled = true; toast('กำลังบันทึกเวลาถึง และอ่านตำแหน่ง GPS…');
+    const L = await getLoc(6000);
+    const t = S.d.trips[id]; if (!t) return;
+    try { await markStop(t, k, role === 'driver' ? 'driver' : 'manual', L); } catch { el.disabled = false; return; }
+    const e = locEntry(L, 'gps');
+    toast(e ? `บันทึกเวลาถึงแล้ว · ${placeText(e)}` : 'บันทึกเวลาถึงแล้ว (อ่าน GPS ไม่ได้ จึงไม่มีพิกัด)');
+    render({ force: true });
+  },
+  podOpen: el => { const t = S.d.trips[el.dataset.id]; if (t) openPod(t, el.dataset.k); },
+  sigClear: () => clearSig(),
+  stopUndo: el => {
+    const t = S.d.trips[el.dataset.id]; const k = el.dataset.k; if (!t || !(t.arr || {})[k]) return;
+    if (t.arr[k].doneAt) return confirmSheet('ยกเลิกการส่งงาน', 'เวลาลงของเสร็จ รูป และลายเซ็นของจุดนี้จะถูกเอาออกจากทริป (เวลาถึงยังอยู่)', 'ยกเลิกการส่งงาน', async () => {
+      const cur = S.d.trips[t.id]; const arr = { ...(cur.arr || {}) }; const { doneAt, doneBy, doneLoc, recv, photos, noPhoto, ...rest } = arr[k] || {}; arr[k] = rest;
+      await patch('trips', cur.id, { arr });
+    });
+    const arr = { ...(t.arr || {}) }; delete arr[k];
+    patch('trips', t.id, { arr }).then(() => render({ force: true }), () => {});
+  },
   queueSite: el => { ui.queueSite = el.dataset.v; ls.set('ssc-queue-site', ui.queueSite); render({ force: true }); },
   gps: () => useGPS(),
   ciShowTicket: () => { ui.ci.showForm = false; render({ force: true }); },
@@ -2815,7 +3007,7 @@ function onBind(e) {
 }
 function markDirty(e) { const t = e.target; if (t && t.dataset && !t.dataset.bind && t.closest && t.closest('#main form[data-form]')) formDirty = true; }
 document.addEventListener('input', e => { markDirty(e); if (e.target.dataset && e.target.dataset.imp) { updateImportPreview(e.target); return; } if (e.target.dataset && e.target.dataset.sort) { updateSortPreview(e.target); return; } if (e.target.type !== 'radio' && e.target.tagName !== 'SELECT') onBind(e); });
-document.addEventListener('change', e => { if (e.target.type === 'radio' || e.target.tagName === 'SELECT' || e.target.type === 'checkbox' || e.target.type === 'date') { if (e.target.dataset && e.target.dataset.act) return; onBind(e); } });
+document.addEventListener('change', e => { if (e.target.dataset && e.target.dataset.pod) { podPick(e.target); return; } if (e.target.type === 'radio' || e.target.tagName === 'SELECT' || e.target.type === 'checkbox' || e.target.type === 'date') { if (e.target.dataset && e.target.dataset.act) return; onBind(e); } });
 document.addEventListener('submit', async e => {
   const form = e.target; e.preventDefault();
   const fd = Object.fromEntries(new FormData(form).entries());
@@ -2872,7 +3064,7 @@ function makeDemo() {
   const kmUsed = [3200, 12500, 19400, 8800, 15100, 20600, 6000, 18200, 11000, 1500, 9900, 4300, 13800, 7600];
   spec.forEach(([type, line, ownership, partner], i) => {
     const id = 'v' + pad(i + 1); const base = 300000 + i * 41700; const c = cap[type];
-    d.vehicles[id] = { id, plate: `70-${1001 + i}`, type, line, trailerPlate: type === '10' ? '' : `70-${8001 + i}`, trailerType: type === '10' ? '' : (i % 3 ? 'ตู้ทึบ' : 'พื้นเรียบ'), ownership: ownership || 'SSC', partner: partner || '', status: i === 9 ? 'repair' : 'ready', capWeightKg: null, capVolumeCbm: c[1], capPallets: c[2], tareKg: { '10': 10500, '18': 15500, '22': 18500 }[type], lastServiceKm: base, currentKm: base + kmUsed[i], lastServiceDate: addDays(today, -40 - i * 3) };
+    d.vehicles[id] = { id, plate: `70-${1001 + i}`, type, line, trailerPlate: type === '10' ? '' : `70-${8001 + i}`, trailerType: type === '10' ? '' : (i % 3 ? 'ตู้ทึบ' : 'พื้นเรียบ'), ownership: ownership || 'SSC', partner: partner || '', status: i === 9 ? 'repair' : 'ready', capWeightKg: null, capVolumeCbm: c[1], capPallets: c[2], tareKg: { '10': 10500, '18': 15500, '22': 18500 }[type], gpsProvider: ownership ? '' : 'เทเลเทค', lastServiceKm: base, currentKm: base + kmUsed[i], lastServiceDate: addDays(today, -40 - i * 3) };
   });
   for (let i = 1; i <= 14; i++) d.drivers['d' + pad(i)] = { id: 'd' + pad(i), name: `คนขับตัวอย่าง ${pad(i)}`, nickname: '', phone: '', active: true };
   const ci = (id, vi, ms, o = {}) => {
@@ -2929,8 +3121,8 @@ function makeDemo() {
   d.trips.t20.departedAt = iso(now - 7 * 3600000); d.trips.t22.departedAt = iso(now - 30 * 3600000);
   d.trips.t20.posLog = [pe(12.796, 99.967, 300), pe(12.36, 99.91, 200), pe(11.213, 99.513, 40)]; d.trips.t20.pos = d.trips.t20.posLog[2];
   d.trips.t22.posLog = [pe(13.548, 100.274, 180), pe(14.231, 100.578, 30)]; d.trips.t22.pos = d.trips.t22.posLog[1];
-  d.trips.t22.arr = { 'n_เดโปชลบุรี': { at: iso(now - 20 * 3600000), by: null, src: 'manual' }, 'n_สมุทรสาคร': { at: iso(now - 4 * 3600000), by: null, src: 'driver' } };
-  const arrAt = (tid, list) => { const t = d.trips[tid]; t.arr = {}; list.forEach(([k, hm]) => (t.arr[k] = { at: new Date(`${addDays(t.date, 1)}T${hm}:00`).toISOString(), by: null, src: 'manual' })); };
+  d.trips.t22.arr = { 'n_เดโปชลบุรี': { at: iso(now - 20 * 3600000), by: null, src: 'manual', doneAt: iso(now - 19 * 3600000), recv: 'คลังเดโปชลบุรี', photos: {}, noPhoto: 'ข้อมูลตัวอย่าง' }, 'n_สมุทรสาคร': { at: iso(now - 4 * 3600000), by: null, src: 'driver' } };
+  const arrAt = (tid, list) => { const t = d.trips[tid]; t.arr = {}; list.forEach(([k, hm]) => { const a = new Date(`${addDays(t.date, 1)}T${hm}:00`); t.arr[k] = { at: a.toISOString(), by: null, src: 'manual', doneAt: new Date(a.getTime() + 50 * 60000).toISOString(), photos: {}, noPhoto: 'ข้อมูลตัวอย่าง' }; }); };
   arrAt('t05', [['b_br-srt', '06:35']]);
   arrAt('t06', [['b_br-cpn', '04:50'], ['b_br-srt', '06:10'], ['b_br-ts', '06:55'], ['b_br-nst', '07:25']]);
   arrAt('t07', [['b_br-cpn', '05:40']]);
