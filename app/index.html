@@ -2451,6 +2451,7 @@ const FIELDS = {
     { k: 'capVolumeCbm', label: 'ปริมาตร (คิว)', type: 'number' },
     { k: 'capPallets', label: 'จำนวนพาเลท', type: 'number' },
     { k: 'tareKg', label: 'น้ำหนักรถเปล่า หัว+หาง (กก.)', type: 'number', hint: 'ใช้คำนวณน้ำหนักรวมตามกฎหมาย 25 / 45 / 50 ตัน' },
+    { k: 'driverId', label: 'คนขับประจำตอนนี้', type: 'driver', hint: 'ตอนเช็คอินและจัดรถจะเลือกคนนี้ให้ก่อน เปลี่ยนได้ (คนขับสลับรถได้)' },
     { k: 'gpsProvider', label: 'ระบบ GPS ติดรถ', type: 'select', opts: [['', '— ไม่ระบุ —'], ['เทเลเทค', 'เทเลเทค (รถบรรทุก)'], ['Forth Tracking', 'Forth Tracking (รถเล็ก)'], ['อื่นๆ', 'อื่นๆ'], ['ไม่มี', 'ไม่มี GPS']] },
     { k: 'currentKm', label: 'เลขไมล์ปัจจุบัน (Current KM)', type: 'number' },
     { k: 'lastServiceKm', label: 'เลขไมล์เข้าศูนย์ล่าสุด', type: 'number' },
@@ -2545,8 +2546,8 @@ PAGES.master = () => {
 };
 function masterRow(tab, x) {
   const btns = `<div class="actions"><button class="btn sm" data-act="edit" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>แก้ไข</button><button class="btn sm danger" data-act="delete" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>ลบ</button></div>`;
-  if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${lineBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">รับ ${fmt(num(payloadCap(x)))} กก.${num(x.tareKg) ? ` · รถเปล่า ${fmt(num(x.tareKg))} กก.` : ''}${x.gpsProvider ? ` · GPS ${esc(x.gpsProvider)}` : ''} · ${fmt(num(x.capVolumeCbm))} คิว · ${fmt(num(x.capPallets))} พาเลท · ไมล์ ${fmt(num(x.currentKm))} · ${esc(m.label)}</div>${x.gps ? `<div class="small meta">${icon('pin')} ${esc(posText(x.gps))} · ${esc(agoText(x.gps.at))} · ${esc(posSrc(x.gps))}</div>` : ''}${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
-  if (tab === 'drivers') return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> ${x.nickname ? `<span class="meta">(${esc(x.nickname)})</span>` : ''} ${x.active === false ? chip('', 'พัก / ออกแล้ว') : ''}</div><div class="small meta">${x.phone ? esc(x.phone) : 'ไม่มีเบอร์โทร'}</div>${btns}</div></div>`;
+  if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${lineBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">${[`รับ ${fmt(num(payloadCap(x)))} กก.`, num(x.tareKg) ? `รถเปล่า ${fmt(num(x.tareKg))} กก.` : '', num(x.capPallets) ? `${fmt(num(x.capPallets))} พาเลท` : '', num(x.capVolumeCbm) ? `${fmt(num(x.capVolumeCbm))} คิว` : '', x.gpsProvider ? `GPS ${esc(x.gpsProvider)}` : '', num(x.currentKm) !== null ? `ไมล์ ${fmt(num(x.currentKm))}` : '', esc(m.label)].filter(Boolean).join(' · ')}</div>${x.gps ? `<div class="small meta">${icon('pin')} ${esc(posText(x.gps))} · ${esc(agoText(x.gps.at))} · ${esc(posSrc(x.gps))}</div>` : ''}${x.driverId && S.d.drivers[x.driverId] ? `<div class="small meta">${icon('user')} ${esc(S.d.drivers[x.driverId].name)}${S.d.drivers[x.driverId].phone ? ' · ' + esc(S.d.drivers[x.driverId].phone) : ''}</div>` : `<div class="small meta">${icon('user')} ยังไม่มีคนขับประจำ</div>`}${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${(() => { const dup = x.trailerPlate ? Object.values(S.d.vehicles).filter(o => o.id !== x.id && o.trailerPlate === x.trailerPlate).map(o => o.plate) : []; return dup.length ? chip('warn', `หาง ${x.trailerPlate} ซ้ำกับรถ ${dup.join(', ')}`) : ''; })()}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
+  if (tab === 'drivers') return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> ${x.nickname ? `<span class="meta">(${esc(x.nickname)})</span>` : ''} ${x.active === false ? chip('', 'พัก / ออกแล้ว') : ''}</div><div class="small meta">${x.phone ? esc(x.phone) : 'ไม่มีเบอร์โทร'}${(() => { const vs = Object.values(S.d.vehicles).filter(v => v.driverId === x.id).map(v => v.plate); return vs.length ? ` · ขับ ${esc(vs.join(', '))}` : ''; })()}</div>${btns}</div></div>`;
   if (tab === 'sites') { const pinned = x.lat !== null && x.lat !== undefined; const ck = CHECKIN_KINDS.includes(x.kind); return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> <span class="small muted">${esc(SITE_KIND[x.kind] || '')}</span> ${lineBadge(x.line)} ${ck ? (pinned ? chip('good', 'ปักหมุดแล้ว', 'pin') : chip('warn', 'ยังไม่ปักหมุด', 'pin')) : ''} ${x.operator ? chip(x.operator === 'Partner' ? '' : 'info', x.operator === 'SSC' ? 'กระจายโดยรถบริษัท' : x.operator === 'Partner' ? 'กระจายโดย Partner' : 'รถบริษัท + Partner') : ''}</div>${x.aliases ? `<div class="small meta">ชื่อเรียกหน้างาน: ${esc(x.aliases)}</div>` : ''}${x.backhaulCutoff ? `<div class="small meta">ตัดรอบรถมีงาน Backhaul ${esc(x.backhaulCutoff)} น.</div>` : ''}${x.provinces ? `<div class="small meta">ดูแลจังหวัด: ${esc(x.provinces)}</div>` : ''}${ck ? `<div class="small meta num">${pinned ? `${(+x.lat).toFixed(5)}, ${(+x.lng).toFixed(5)} · รัศมี ${fmt(num(x.radiusM) || settings().defaultRadiusM)} ม. · ${locLink(x)}` : 'วางพิกัดจาก Google Maps ในหน้าแก้ไข'}</div>` : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
   return `<div class="row"><div class="main"><div class="l1">${kindB(x.kind)} <b>${esc(x.name)}</b> ${lineBadge(x.line)}</div><div class="small meta num">${esc(x.origin || '–')} → ${esc(x.destination || '–')} · Standard ${num(x.standardKm) ? fmt(num(x.standardKm)) + ' กม.' : 'ยังไม่มี'} · เบี้ยเลี้ยง ${money(num(x.allowance))} · ทางด่วน ${money(num(x.toll))}</div>${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`;
 }
@@ -2556,6 +2557,7 @@ function fieldHtml(f, val) {
   if (f.type === 'select') input = `<select id="${id}" name="${f.k}">${f.opts.map(([v, l]) => `<option value="${esc(v)}" ${String(val ?? '') === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   else if (f.type === 'route') input = `<select id="${id}" name="${f.k}"><option value="">— ไม่ระบุ —</option>${Object.values(S.d.routes).sort(thSort('name')).map(r => `<option value="${esc(r.id)}" ${val === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}</select>`;
   else if (f.type === 'branch') input = `<select id="${id}" name="${f.k}"><option value="">— ไม่ระบุ —</option>${branches().map(b => `<option value="${esc(b.id)}" ${val === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>`;
+  else if (f.type === 'driver') input = `<select id="${id}" name="${f.k}"><option value="">— ไม่ระบุ —</option>${Object.values(S.d.drivers).filter(x => x.active !== false && x.active !== 'false' || x.id === val).sort(thSort('name')).map(x => `<option value="${esc(x.id)}" ${val === x.id ? 'selected' : ''}>${esc(x.name)}${x.phone ? ' · ' + esc(x.phone) : ''}</option>`).join('')}</select>`;
   else if (f.type === 'textarea') input = `<textarea id="${id}" name="${f.k}">${esc(val ?? '')}</textarea>`;
   else if (f.type === 'number') input = `<input id="${id}" name="${f.k}" inputmode="decimal" value="${esc(val ?? '')}">`;
   else input = `<input id="${id}" name="${f.k}" type="${f.type === 'date' ? 'date' : f.type === 'time' ? 'time' : f.type === 'datetime' ? 'datetime-local' : f.type === 'tel' ? 'tel' : 'text'}" value="${esc(val ?? '')}">`;
@@ -2587,7 +2589,7 @@ function openEditor(col, id) {
           else { const L = parseLoc(v); if (!L || L.lat === null) errs.push('อ่านพิกัดไม่ได้ วางเป็นตัวเลข เช่น 13.7930, 100.3260'); else { o.lat = L.lat; o.lng = L.lng; } }
         }
         else if (f.k === 'active') o.active = v !== 'false';
-        else o[f.k] = v || (f.type === 'select' || f.type === 'route' || f.type === 'branch' ? null : '');
+        else o[f.k] = v || (f.type === 'select' || f.type === 'route' || f.type === 'branch' || f.type === 'driver' ? null : '');
       }
       if (col === 'vehicles' && o.plate) { const dup = Object.values(S.d.vehicles).find(x => x.id !== (cur && cur.id) && normPlate(x.plate) === normPlate(o.plate)); if (dup) errs.push('มีทะเบียนนี้ในระบบแล้ว'); }
       if (col === 'sites' && o.backhaulCutoff && cutoffMin(o) === null) errs.push('เวลาตัดรอบต้องเป็นรูปแบบ ชั่วโมง:นาที เช่น 10:00');
@@ -2837,14 +2839,15 @@ PAGES.pending = () => {
       <li><b>เวลาเข้าสาขา:</b> ทุกสาขาภาคใต้ต้องถึงก่อนประมาณ 07:00 น. (ค่าเริ่มต้นคือเช้าวันถัดจากวันออกรถ แก้วันได้ในทริป)</li>
       <li><b>รถกำลังวิ่ง:</b> ต้องเห็นว่าวิ่งจากไหนไปไหน ตอนนี้ถึงอำเภอ/จังหวัดไหนแล้ว</li>
       <li><b>ส่งงาน:</b> ทุกจุดคนขับกด "ถึงแล้ว" และ "ลงของเสร็จ" ระบบจับตำแหน่งตอนกด ลงของเสร็จต้องถ่ายรูปบิล รูปสินค้า รูปรถว่าง และลายเซ็นผู้รับ · ที่ Dairy Plus ใช้เวลาลงของเสร็จจริง + 2 ชม. (ลงเร็วได้โหลดเร็ว)</li>
-      <li><b>GPS ติดรถ:</b> รถบรรทุกใช้เทเลเทค รถเล็กใช้ Forth Tracking และให้คนขับกดส่งจากมือถือด้วย · คัดลอกหน้า "ตำแหน่งปัจจุบัน" ของเทเลเทคมาวางในแอปได้ทีเดียวทุกคัน</li>
+      <li><b>GPS ติดรถ:</b> รถบรรทุกใช้เทเลเทค รถเล็กใช้ Forth Tracking · การต่อ API พักไว้ก่อน ใช้คนขับกดส่งจากมือถือ (คัดลอกหน้า "ตำแหน่งปัจจุบัน" ของเทเลเทคมาวางได้ถ้าต้องการ)</li>
     </ol></div></section>
   <section class="sec"><h2>เรื่องที่ยังต้องถาม</h2>
     <div class="card pad doc"><ol>
       <li>งาน SC Standard Can รับกระป๋องที่ไหน (ต้นทางก่อนไปลำปาง)</li>
       <li>แจ้งทะเบียนโรงงานผ่านช่องทางไหน (กลุ่ม LINE / อีเมล / โทร) จะได้ทำข้อความให้ตรงรูปแบบ</li>
       <li>น้ำหนักรถเปล่า (หัว + หาง) ของแต่ละคัน ส่งมาพร้อมไฟล์ทะเบียนได้ไหม</li>
-      <li>ตรีเพชรอีซูซุ (เทเลเทค) มี API ให้ดึงตำแหน่งรถอัตโนมัติไหม · ภาพหน้าจอตำแหน่งปัจจุบันของ Forth Tracking (รถเล็ก)</li>
+      <li>ไฟล์รถ 24/9/69: หาง 62-8056 อยู่กับรถ 63-5501 และ 63-6979 · หาง 62-8162 อยู่กับรถ 63-5504, 68-4616, 68-4617 · คนขับ เบียร์ พิมพระ อยู่ทั้งรถ 62-6128 และ 62-6130 (คนละเบอร์) คันไหนถูก</li>
+      <li>รถแต่ละคันวิ่งสายเหนือหรือสายใต้ หรือสลับได้ทุกคัน (ตอนนี้ตั้งเป็นไม่ระบุสาย)</li>
     </ol></div></section>
   <section class="sec"><h2>ระบบอื่นที่จะทำต่อ</h2>
     <div class="card pad doc"><ul>
@@ -2940,7 +2943,7 @@ const ACT = {
   dpLine: el => { const L = el.dataset.v; ui.dp.line = L; ui.dp.routeId = ''; ui.dp.err = ''; if (L !== 'all') { Object.keys(ui.dp.sel).forEach(id => { const o = S.d.orders[id]; if (!o || orderLine(o) !== L) delete ui.dp.sel[id]; }); if (L === 'north') ui.dp.psel = {}; const v = S.d.vehicles[ui.dp.vehicleId]; if (v && v.line && v.line !== L) ui.dp.vehicleId = ''; } render({ force: true }); },
   dpSel: el => { if (el.checked) ui.dp.sel[el.dataset.id] = true; else delete ui.dp.sel[el.dataset.id]; ui.dp.err = ''; render({ force: true }); },
   dpPsel: el => { if (el.checked) ui.dp.psel[el.dataset.id] = true; else delete ui.dp.psel[el.dataset.id]; ui.dp.err = ''; render({ force: true }); },
-  dpVeh: el => { const id = el.dataset.id; if (ui.dp.vehicleId === id) return; ui.dp.vehicleId = id; const w = Object.values(S.d.checkins).filter(c => c.status === 'waiting' && c.vehicleId === id).sort(queueCmp)[0]; ui.dp.driverId = (w && w.driverId) || ''; ui.dp.trailerPlate = (w && w.trailerPlate) || ''; ui.dp.confirmOver = false; ui.dp.err = ''; render({ force: true }); },
+  dpVeh: el => { const id = el.dataset.id; if (ui.dp.vehicleId === id) return; ui.dp.vehicleId = id; const w = Object.values(S.d.checkins).filter(c => c.status === 'waiting' && c.vehicleId === id).sort(queueCmp)[0]; ui.dp.driverId = (w && w.driverId) || (S.d.vehicles[id] && S.d.drivers[S.d.vehicles[id].driverId] ? S.d.vehicles[id].driverId : ''); ui.dp.trailerPlate = (w && w.trailerPlate) || ''; ui.dp.confirmOver = false; ui.dp.err = ''; render({ force: true }); },
   createTrip: () => createTrip(),
   tripTab: el => { ui.trips.tab = el.dataset.v; render({ force: true }); },
   tripCancel: el => { const t = S.d.trips[el.dataset.id]; if (!t) return; confirmSheet('ยกเลิกทริป', `ยกเลิกทริป ${esc(t.no)}? ออเดอร์และพัสดุจะกลับไปรอจัดรถ และรถกลับเข้าคิวที่ลำดับเดิม`, 'ยกเลิกทริป', async () => {
@@ -3105,6 +3108,8 @@ function onBind(e) {
   setPath(path, val);
   const rr = el.dataset.rerender;
   if (path.startsWith('dp.')) ui.dp.err = '';
+  if (path === 'ci.driverId' && val && !ui.ci.vehicleId) { const v = Object.values(S.d.vehicles).find(x => x.driverId === val); if (v) { ui.ci.vehicleId = v.id; const sel = $('#ci-veh'); if (sel) sel.value = v.id; } }
+  if (path === 'ci.vehicleId' && val && !ui.ci.driverId) { const v = S.d.vehicles[val]; if (v && v.driverId && S.d.drivers[v.driverId]) { ui.ci.driverId = v.driverId; const sel = $('#ci-driver'); if (sel) sel.value = v.driverId; } }
   if (path === 'ci.locText') {
     const L = parseLoc(val);
     if (L === null) { if (!ui.ci.loc || ui.ci.loc.source !== 'gps') ui.ci.loc = null; ui.ci.locMsg = ''; }
