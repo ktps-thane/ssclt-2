@@ -437,6 +437,7 @@ const ICONS = {
   trailer: '<rect x="2" y="6" width="15" height="10" rx="1"/><path d="M17 13h5"/><circle cx="6" cy="18" r="1.8"/><circle cx="12" cy="18" r="1.8"/>',
   doc: '<path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 13h7M9 17h7"/>',
   fuel: '<path d="M4 21V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v16M3 21h13M7 7h5v4H7z"/><path d="M15 10h2a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V9l-3-3"/>',
+  mail: '<rect x="3" y="5.5" width="18" height="13" rx="1.5"/><path d="M3.5 6.5 12 13l8.5-6.5"/>',
   cash: '<rect x="2.5" y="6" width="19" height="12" rx="1.5"/><circle cx="12" cy="12" r="2.8"/><path d="M6 9.5v5M18 9.5v5"/>',
   quote: '<path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5"/><path d="M12.5 11.5h-2a1.5 1.5 0 0 0 0 3h1a1.5 1.5 0 0 1 0 3h-2.2M11 10.5v1M11 17.5v1"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
@@ -498,7 +499,7 @@ function settings() {
   return { ...DEFAULT_SETTINGS, ...s, fuelStd: { ...DEFAULT_SETTINGS.fuelStd, ...(s.fuelStd || {}) }, minRevenue: { ...DEFAULT_SETTINGS.minRevenue, ...(s.minRevenue || {}) }, maxPayloadKg: { ...DEFAULT_SETTINGS.maxPayloadKg, ...(s.maxPayloadKg || {}) }, legalGrossKg: { ...DEFAULT_SETTINGS.legalGrossKg, ...(s.legalGrossKg || {}) } };
 }
 const clean = obj => { const o = JSON.parse(JSON.stringify(obj)); delete o.id; return o; };
-const DEMO_KEY = 'ssc-demo-data-v6';
+const DEMO_KEY = 'ssc-demo-data-v7';
 function saveLocal() { ls.set('ssc-local-data', S.live); }
 function saveDemo() { ls.set(DEMO_KEY, S.demoData); }
 async function put(col, id, obj) {
@@ -2407,6 +2408,24 @@ function factoryLine(t, i) {
   return `${i}) ทะเบียน ${v.plate || '-'}${t.trailerPlate ? ' หาง ' + t.trailerPlate : ''} (${v.type || '-'} ล้อ) · คนขับ ${d.name || '-'}${d.phone ? ' ' + d.phone : ''}${t.loadAt ? ' · เวลาโหลด ' + hhmm(t.loadAt) : ''}${dest ? ' · ไป ' + dest : ''}`;
 }
 const factoryMsg = (trips, origin, date) => `แจ้งทะเบียนรถเข้าโหลด ${origin || ''} วันที่ ${thDate(date)}\n` + trips.map((t, i) => factoryLine(t, i + 1)).join('\n');
+// plates go to the factory by email (Dairy Plus นครสวรรค์: คุณอิ้ง); recipients live on the factory's place record
+const EMAIL_RE = /^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/;
+const emailsOf = x => uniq(String(x || '').split(/[,;\s]+/).map(y => y.trim()).filter(y => EMAIL_RE.test(y)));
+function factoryMail(trips, origin, date) {
+  const sts = uniq(String(origin || '').split(' / ').map(x => siteFor(x)).filter(Boolean));
+  const emails = uniq(sts.flatMap(st => emailsOf(st.notifyEmail))); const names = uniq(sts.map(st => String(st.notifyName || '').trim()));
+  if (!emails.length) return null;
+  const subject = `แจ้งทะเบียนรถเข้าโหลด ${origin} วันที่ ${thDate(date)} · ภูเก็ตศรีสุชาติขนส่ง`;
+  const body = `เรียน ${names.join(', ') || 'เจ้าหน้าที่'}\n\n${factoryMsg(trips, origin, date)}\n\nขอบคุณครับ\n${COMPANY}`;
+  return { emails, names, href: `mailto:${emails.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body.replace(/\n/g, '\r\n'))}` };
+}
+function factoryActions(trips, origin, date) {
+  const m = factoryMail(trips, origin, date); const msg = factoryMsg(trips, origin, date); const ids = trips.map(t => t.id).join(',');
+  const done = trips.every(t => t.notifiedAt);
+  return `${m ? `<div class="small meta">${icon('mail')} ส่งอีเมลถึง ${esc(m.names.join(', ') || '')} ${esc(m.emails.join(', '))}</div>` : `<div class="note warn small">ยังไม่มีอีเมลแจ้งทะเบียนของ ${esc(origin || 'โรงงานนี้')} ใส่ได้ที่ ข้อมูลหลัก → สถานที่ (ช่อง อีเมลแจ้งทะเบียนรถ)</div>`}
+    <div class="rowflex">${m ? `<a class="btn sm primary" href="${esc(m.href)}" target="_blank" rel="noopener">${icon('mail')}ส่งอีเมลแจ้งทะเบียน</a>` : ''}<button class="btn sm" data-act="copyText" data-v="${esc(msg)}">${icon('copy')}คัดลอกข้อความ</button>${m ? `<button class="btn sm ghost" data-act="copyText" data-v="${esc(m.emails.join(', '))}">คัดลอกอีเมล</button>` : ''}${done ? '' : `<button class="btn sm ${m ? '' : 'primary'}" data-act="notifyGroup" data-ids="${esc(ids)}" ${dis()}>${icon('check')}บันทึกว่าแจ้งแล้ว</button>`}</div>
+    ${m && !done ? '<p class="small muted">กดส่งอีเมล (เปิดแอปอีเมลพร้อมข้อความ) ส่งเสร็จแล้วกด "บันทึกว่าแจ้งแล้ว"</p>' : ''}`;
+}
 /* ---------- running trucks: where is it now, stops and arrival deadlines ---------- */
 // district boundaries (OpenGISData-Thailand, CC BY 4.0) embedded as #geo-th; decoded on first use
 let GEO = null;
@@ -2961,7 +2980,7 @@ function notifySection(all) {
   const groups = {};
   pend.forEach(t => { const k = t.date + '|' + tripOrigin(t); (groups[k] = groups[k] || []).push(t); });
   return `<section class="sec"><div class="sec-h"><h2>แจ้งทะเบียนโรงงาน</h2><span class="sub">${pend.length} ทริปยังไม่ได้แจ้ง</span></div>
-    ${Object.entries(groups).map(([k, ts]) => { const [date, origin] = k.split('|'); const msg = factoryMsg(ts, origin, date); const ns = notifyState(ts[0]); return `<div class="card pad stack"><div class="l1"><b>${esc(origin || 'ไม่ระบุต้นทาง')}</b> <span class="small muted">โหลด ${thDate(date)} · ${ts.length} คัน</span> ${ns ? chip(ns.st || 'info', ns.text, 'clock') : ''}</div><pre class="note small" style="white-space:pre-wrap;margin:0;font-family:var(--f-body)">${esc(msg)}</pre><div class="rowflex"><button class="btn sm" data-act="copyText" data-v="${esc(msg)}">${icon('copy')}คัดลอกข้อความ</button><button class="btn sm primary" data-act="notifyGroup" data-ids="${esc(ts.map(t => t.id).join(','))}" ${dis()}>${icon('check')}บันทึกว่าแจ้งแล้ว</button></div></div>`; }).join('')}
+    ${Object.entries(groups).map(([k, ts]) => { const [date, origin] = k.split('|'); const msg = factoryMsg(ts, origin, date); const ns = notifyState(ts[0]); return `<div class="card pad stack"><div class="l1"><b>${esc(origin || 'ไม่ระบุต้นทาง')}</b> <span class="small muted">โหลด ${thDate(date)} · ${ts.length} คัน</span> ${ns ? chip(ns.st || 'info', ns.text, 'clock') : ''}</div><pre class="note small" style="white-space:pre-wrap;margin:0;font-family:var(--f-body)">${esc(msg)}</pre>${factoryActions(ts, origin, date)}</div>`; }).join('')}
   </section>`;
 }
 function tripRow(t) {
@@ -3037,7 +3056,7 @@ PAGES.trip = id => {
   </div>
   ${t.status !== 'cancel' ? trackCard(t) : ''}
   ${t.status !== 'cancel' ? feedCard(t) : ''}
-  ${(t.status === 'planned' || t.status === 'running') && needsFactory(t) ? (() => { const msg = factoryMsg([t], tripOrigin(t), t.date); return `<section class="card pad stack"><div class="sec-h"><h2>แจ้งทะเบียนโรงงาน</h2>${t.notifiedAt ? chip('good', 'แจ้งแล้ว ' + thDT(t.notifiedAt)) : (() => { const ns = notifyState(t); return chip((ns && ns.st) || 'warn', ns ? ns.text : 'ยังไม่ได้แจ้ง', 'clock'); })()}</div><pre class="note small" style="white-space:pre-wrap;margin:0;font-family:var(--f-body)">${esc(msg)}</pre><div class="rowflex"><button class="btn sm" data-act="copyText" data-v="${esc(msg)}">${icon('copy')}คัดลอกข้อความ</button>${t.notifiedAt ? '' : `<button class="btn sm primary" data-act="notifyGroup" data-ids="${esc(t.id)}" ${dis()}>${icon('check')}บันทึกว่าแจ้งแล้ว</button>`}</div></section>`; })() : ''}
+  ${(t.status === 'planned' || t.status === 'running') && needsFactory(t) ? (() => { const msg = factoryMsg([t], tripOrigin(t), t.date); return `<section class="card pad stack"><div class="sec-h"><h2>แจ้งทะเบียนโรงงาน</h2>${t.notifiedAt ? chip('good', 'แจ้งแล้ว ' + thDT(t.notifiedAt)) : (() => { const ns = notifyState(t); return chip((ns && ns.st) || 'warn', ns ? ns.text : 'ยังไม่ได้แจ้ง', 'clock'); })()}</div><pre class="note small" style="white-space:pre-wrap;margin:0;font-family:var(--f-body)">${esc(msg)}</pre>${factoryActions([t], tripOrigin(t), t.date)}</section>`; })() : ''}
   ${action}
   <section class="sec">
     <div class="sec-h"><h2>งานในทริป (ขา / Job)</h2><div class="rowflex">${t.status === 'running' ? `<button class="btn sm" data-act="pickupOpen" data-id="${esc(t.id)}" ${dis()}>${icon('camera')}เช็คอินรับของขากลับ</button>` : ''}${t.status !== 'closed' && t.status !== 'cancel' ? `<button class="btn sm" data-act="addJob" data-id="${esc(t.id)}" ${dis()}>${icon('plus')}เพิ่มขา (Backhaul / วิ่งเปล่า)</button>` : ''}</div></div>
@@ -3149,6 +3168,8 @@ const FIELDS = {
     { k: 'aliases', label: 'ชื่อเรียกหน้างาน', hint: 'คั่นด้วยจุลภาค เช่น คลังสาม, สาย 3' },
     { k: 'coords', label: 'พิกัด (วางจาก Google Maps)', type: 'coords', hint: 'กดค้างที่จุดบนแผนที่ แล้วคัดลอกตัวเลข เช่น 13.7930, 100.3260' },
     { k: 'mapsUrl', label: 'ลิงก์ Google Maps (ถ้ามี)', hint: 'ลิงก์หมุดที่แชร์จาก Google Maps ใช้เปิดแผนที่ให้คนขับ · ปุ่มนำทางใช้พิกัด' },
+    { k: 'notifyEmail', label: 'อีเมลแจ้งทะเบียนรถ (โรงงาน)', hint: 'ใส่ได้หลายอีเมล คั่นด้วยจุลภาค ระบบเปิดอีเมลพร้อมรายการทะเบียนให้ส่ง' },
+    { k: 'notifyName', label: 'ชื่อผู้รับแจ้งทะเบียน', hint: 'เช่น คุณอิ้ง' },
     { k: 'radiusM', label: 'รัศมีเช็คอิน (เมตร)', type: 'number', hint: 'เว้นว่าง = 500 ม. ตามค่าตั้งค่า' },
     { k: 'backhaulCutoff', label: 'เวลาตัดรอบรถมีงาน Backhaul', hint: 'เช่น 10:00 (คลังสาย 3) เว้นว่าง = เรียงตามเวลาอย่างเดียว' },
     { k: 'operator', label: 'ผู้กระจายปลายทาง (สาขา)', type: 'select', opts: [['', '— ไม่ใช่สาขา —'], ['SSC', 'รถบริษัท'], ['Partner', 'รถ Partner'], ['SSC + Partner', 'รถบริษัท + Partner']] },
@@ -3228,7 +3249,7 @@ function masterRow(tab, x) {
   const btns = `<div class="actions"><button class="btn sm" data-act="edit" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>แก้ไข</button><button class="btn sm danger" data-act="delete" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>ลบ</button></div>`;
   if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${baseBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">${[`รับ ${fmt(num(payloadCap(x)))} กก.`, num(x.tareKg) ? `รถเปล่า ${fmt(num(x.tareKg))} กก.` : '', num(x.capPallets) ? `${fmt(num(x.capPallets))} พาเลท` : '', num(x.capVolumeCbm) ? `${fmt(num(x.capVolumeCbm))} คิว` : '', x.gpsProvider ? `GPS ${esc(x.gpsProvider)}` : '', num(x.currentKm) !== null ? `ไมล์ ${fmt(num(x.currentKm))}` : '', esc(m.label)].filter(Boolean).join(' · ')}</div>${x.gps ? `<div class="small meta">${icon('pin')} ${esc(posText(x.gps))} · ${esc(agoText(x.gps.at))} · ${esc(posSrc(x.gps))}</div>` : ''}${x.driverId && S.d.drivers[x.driverId] ? `<div class="small meta">${icon('user')} ${esc(S.d.drivers[x.driverId].name)}${S.d.drivers[x.driverId].phone ? ' · ' + esc(S.d.drivers[x.driverId].phone) : ''}</div>` : `<div class="small meta">${icon('user')} ยังไม่มีคนขับประจำ</div>`}${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${(x.trailerLog || []).length ? (() => { const g = x.trailerLog[x.trailerLog.length - 1]; return `<div class="small meta">${icon('trailer')} เปลี่ยนหางประจำ ${esc(g.from || '-')} → ${esc(g.to || '-')} · ${thDT(g.at)}</div>`; })() : ''}${(() => { const dup = x.trailerPlate ? Object.values(S.d.vehicles).filter(o => o.id !== x.id && o.trailerPlate === x.trailerPlate).map(o => o.plate) : []; return dup.length ? chip('warn', `หาง ${x.trailerPlate} ซ้ำกับรถ ${dup.join(', ')}`) : ''; })()}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
   if (tab === 'drivers') return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> ${x.nickname ? `<span class="meta">(${esc(x.nickname)})</span>` : ''} ${x.active === false ? chip('', 'พัก / ออกแล้ว') : ''}</div><div class="small meta">${x.phone ? esc(x.phone) : 'ไม่มีเบอร์โทร'}${(() => { const vs = Object.values(S.d.vehicles).filter(v => v.driverId === x.id).map(v => v.plate); return vs.length ? ` · ขับ ${esc(vs.join(', '))}` : ''; })()}</div>${btns}</div></div>`;
-  if (tab === 'sites') { const pinned = x.lat !== null && x.lat !== undefined; const ck = CHECKIN_KINDS.includes(x.kind); return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> <span class="small muted">${esc(SITE_KIND[x.kind] || '')}</span> ${lineBadge(x.line)} ${ck ? (pinned ? chip('good', 'ปักหมุดแล้ว', 'pin') : chip('warn', 'ยังไม่ปักหมุด', 'pin')) : ''} ${x.operator ? chip(x.operator === 'Partner' ? '' : 'info', x.operator === 'SSC' ? 'กระจายโดยรถบริษัท' : x.operator === 'Partner' ? 'กระจายโดย Partner' : 'รถบริษัท + Partner') : ''}</div>${hasPin(x) || x.mapsUrl ? `<div class="l1">${mapLinks(x)}</div>` : ''}${x.aliases ? `<div class="small meta">ชื่อเรียกหน้างาน: ${esc(x.aliases)}</div>` : ''}${x.backhaulCutoff ? `<div class="small meta">ตัดรอบรถมีงาน Backhaul ${esc(x.backhaulCutoff)} น.</div>` : ''}${x.provinces ? `<div class="small meta">ดูแลจังหวัด: ${esc(x.provinces)}</div>` : ''}${ck ? `<div class="small meta num">${pinned ? `${(+x.lat).toFixed(5)}, ${(+x.lng).toFixed(5)} · รัศมี ${fmt(num(x.radiusM) || settings().defaultRadiusM)} ม. · ${locLink(x)}` : 'วางพิกัดจาก Google Maps ในหน้าแก้ไข'}</div>` : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
+  if (tab === 'sites') { const pinned = x.lat !== null && x.lat !== undefined; const ck = CHECKIN_KINDS.includes(x.kind); return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> <span class="small muted">${esc(SITE_KIND[x.kind] || '')}</span> ${lineBadge(x.line)} ${ck ? (pinned ? chip('good', 'ปักหมุดแล้ว', 'pin') : chip('warn', 'ยังไม่ปักหมุด', 'pin')) : ''} ${x.operator ? chip(x.operator === 'Partner' ? '' : 'info', x.operator === 'SSC' ? 'กระจายโดยรถบริษัท' : x.operator === 'Partner' ? 'กระจายโดย Partner' : 'รถบริษัท + Partner') : ''}</div>${hasPin(x) || x.mapsUrl ? `<div class="l1">${mapLinks(x)}</div>` : ''}${x.aliases ? `<div class="small meta">ชื่อเรียกหน้างาน: ${esc(x.aliases)}</div>` : ''}${x.backhaulCutoff ? `<div class="small meta">ตัดรอบรถมีงาน Backhaul ${esc(x.backhaulCutoff)} น.</div>` : ''}${x.notifyEmail ? `<div class="small meta">${icon('mail')} แจ้งทะเบียน: ${esc(x.notifyName || '')} ${esc(x.notifyEmail)}</div>` : ''}${x.provinces ? `<div class="small meta">ดูแลจังหวัด: ${esc(x.provinces)}</div>` : ''}${ck ? `<div class="small meta num">${pinned ? `${(+x.lat).toFixed(5)}, ${(+x.lng).toFixed(5)} · รัศมี ${fmt(num(x.radiusM) || settings().defaultRadiusM)} ม. · ${locLink(x)}` : 'วางพิกัดจาก Google Maps ในหน้าแก้ไข'}</div>` : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
   return `<div class="row"><div class="main"><div class="l1">${kindB(x.kind)} <b>${esc(x.name)}</b> ${lineBadge(x.line)}</div><div class="small meta num">${esc(x.origin || '–')} → ${esc(x.destination || '–')} · Standard ${num(x.standardKm) ? fmt(num(x.standardKm)) + ' กม.' : 'ยังไม่มี'} · เบี้ยเลี้ยง ${money(num(x.allowance))} · ทางด่วน ${money(num(x.toll))}</div>${num(x.standardKm) ? `<div class="small meta">${icon('fuel')} น้ำมันที่ให้: ${esc(fuelText(x.standardKm))}</div>` : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`;
 }
 function fieldHtml(f, val) {
@@ -3274,6 +3295,7 @@ function openEditor(col, id) {
       if (col === 'vehicles' && o.plate) { const dup = Object.values(S.d.vehicles).find(x => x.id !== (cur && cur.id) && normPlate(x.plate) === normPlate(o.plate)); if (dup) errs.push('มีทะเบียนนี้ในระบบแล้ว'); }
       if (col === 'vehicles' && cur && normPlate(cur.trailerPlate) !== normPlate(o.trailerPlate)) o.trailerLog = [...(cur.trailerLog || []), { from: cur.trailerPlate || '', to: o.trailerPlate || '', at: new Date().toISOString(), by: S.uid || null }].slice(-20);
       if (col === 'sites' && o.backhaulCutoff && cutoffMin(o) === null) errs.push('เวลาตัดรอบต้องเป็นรูปแบบ ชั่วโมง:นาที เช่น 10:00');
+      if (col === 'sites' && o.notifyEmail && String(o.notifyEmail).split(/[,;\s]+/).filter(Boolean).some(x => !EMAIL_RE.test(x))) errs.push('อีเมลแจ้งทะเบียนไม่ถูกต้อง (คั่นหลายอีเมลด้วยจุลภาค)');
       if (col === 'parcels' && o.boxes !== null && (o.boxes < 1 || Math.round(o.boxes) !== o.boxes)) errs.push('จำนวนกล่องต้องเป็นจำนวนเต็มตั้งแต่ 1');
       if (errs.length) return errs.join(' · ');
       if (col === 'orders') { if (!o.line) o.line = (KIND[o.kind] && KIND[o.kind].line) || null; if (!cur) { o.status = 'open'; o.source = 'manual'; o.createdAt = new Date().toISOString(); } }
@@ -3553,13 +3575,13 @@ PAGES.pending = () => {
       <li><b>นมเหมาคัน Dairy Plus:</b> ต้องกำหนดเวลาถึงปลายทางก่อนปล่อยรถ (เช่น เดโปพิษณุโลก)</li>
       <li><b>จังหวัด Partner:</b> พัสดุ ขนม เบ็ดเตล็ด นมร้านค้า ไปจังหวัด Partner ต้องใช้ทะเบียนรถ Partner</li>
       <li><b>คนขับและหาง:</b> ต้องระบุชื่อคนขับและทะเบียนหางทุกทริป หัวแต่ละคันมีหางประจำ เปลี่ยนหางประจำต้องแจ้ง ใช้หางที่ไม่ใช่หางประจำ ระบบเตือนทันที (หางสำรอง)</li>
-      <li><b>แจ้งทะเบียนโรงงาน:</b> ภายในประมาณ 14:00 น. ไม่แจ้งระบบเด้งเตือน</li>
+      <li><b>แจ้งทะเบียนโรงงาน:</b> ภายในประมาณ 14:00 น. ไม่แจ้งระบบเด้งเตือน · แจ้งทางอีเมล Dairy Plus นครสวรรค์ส่งถึงคุณอิ้ง (เพิ่มผู้รับได้ที่ ข้อมูลหลัก → สถานที่)</li>
       <li><b>หน้าร้าน:</b> Checker รับของ (ผู้ส่ง ผู้รับ ที่อยู่ สินค้า จำนวน ราคา) ออกลาเบล แคชเชียร์ยิงลาเบลคิดเงินและเงินทอน</li>
       <li><b>งานเหมา:</b> ลูกค้ากำหนดจุดรับ-จุดส่ง ทำใบเสนอราคาให้ลูกค้า</li>
     </ol></div></section>
   <section class="sec"><h2>เรื่องที่ยังต้องถาม</h2>
     <div class="card pad doc"><ol>
-      <li>แจ้งทะเบียนโรงงานภายใน 14:00 น. คือของ "วันก่อนวันโหลด" ใช่ไหม (ตอนนี้ระบบตั้งแบบนี้) และแจ้งผ่านช่องทางไหน (LINE / อีเมล / โทร)</li>
+      <li>แจ้งทะเบียนโรงงานภายใน 14:00 น. คือของ "วันก่อนวันโหลด" ใช่ไหม (ตอนนี้ระบบตั้งแบบนี้)</li>
       <li>ราคางานเหมา: ใช้ราคาน้ำมันเท่าไหร่ บวกกำไรกี่ % คิดรถเปล่าขากลับไหม</li>
       <li>หางซ้ำในไฟล์รถ 24/9/69: หาง 62-8056 (63-5501 / 63-6979) · หาง 62-8162 (63-5504 / 68-4616 / 68-4617) คันไหนถูก</li>
       <li>น้ำหนักรถเปล่า (หัว + หาง) ของแต่ละคัน ส่งมาพร้อมไฟล์ต้นทุนได้ไหม</li>
@@ -3959,7 +3981,7 @@ function makeDemo() {
   const site = (id, o) => (d.sites[id] = { id, ...o });
   site('s3', { name: 'คลังพุทธมณฑลสาย 3', aliases: 'คลังสาย 3', kind: 'base', line: 'south', lat: 13.7881, lng: 100.3163, radiusM: 500, backhaulCutoff: '10:00', note: 'พิกัดตัวอย่าง ไม่ใช่พิกัดจริง' });
   site('pump', { name: 'ปั๊มนครสวรรค์', aliases: 'ปั๊ม', kind: 'checkin', line: 'north', lat: 15.6852, lng: 100.1105, radiusM: 500, note: 'พิกัดตัวอย่าง รอพิกัดจริงจากเฮีย' });
-  site('dairy', { name: 'Dairy Plus นครสวรรค์', kind: 'origin', line: 'north', lat: 15.7176, lng: 100.1062, note: 'พิกัดตัวอย่าง' });
+  site('dairy', { name: 'Dairy Plus นครสวรรค์', kind: 'origin', line: 'north', lat: 15.7176, lng: 100.1062, note: 'พิกัดตัวอย่าง', notifyEmail: 'logistics@example.com', notifyName: 'คุณตัวอย่าง (ฝ่ายขนส่งโรงงาน)' });
   site('pl-plk', { name: 'เดโป้พิษณุโลก', kind: 'destination', line: 'north', lat: 16.8559, lng: 100.2189, note: 'พิกัดตัวอย่าง' });
   site('pl-cbi', { name: 'เดโปชลบุรี', kind: 'destination', line: 'north', lat: 13.3611, lng: 100.9847, note: 'พิกัดตัวอย่าง' });
   site('pl-asa', { name: 'กระดาษ ASA', aliases: 'สมุทรสาคร', kind: 'origin', line: 'north', lat: 13.5481, lng: 100.2448, note: 'พิกัดตัวอย่าง' });

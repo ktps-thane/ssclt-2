@@ -35,7 +35,7 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   const go = async h => { await page.evaluate(x => (location.hash = x), h); await page.waitForTimeout(250); };
   const overflow = async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   const shot = async n => page.screenshot({ path: `${OUT}/${n}.png`, fullPage: true });
-  const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v6')));
+  const demo = async () => page.evaluate(() => JSON.parse(localStorage.getItem('ssc-demo-data-v7')));
   const waitDemo = async (pred, ms = 9000) => { const t0 = Date.now(); let d = null; while (Date.now() - t0 < ms) { d = await demo(); try { if (pred(d)) return d; } catch {} await page.waitForTimeout(150); } return d; };
   const podFill = async () => {
     const img = OUT + '/m-home.png';
@@ -316,14 +316,14 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   ok(await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง")) .row:has-text("สาขาชุมพร") .podthumbs img').count() === 4 && await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง")) .row:has-text("สาขาชุมพร") .chip:has-text("ลงของเสร็จ")').count() === 1, 'trip shows the 4 proof pictures and the unload time');
   await shot('m-trip-track');
   // late: due date already passed and the truck has not reached สุราษฎร์
-  await page.evaluate(() => { const k = 'ssc-demo-data-v6'; const x = JSON.parse(localStorage.getItem(k)); const d = new Date(); d.setDate(d.getDate() - 1); x.trips.t20.arriveDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; x.trips.t20.date = x.trips.t20.arriveDate; localStorage.setItem(k, JSON.stringify(x)); });
+  await page.evaluate(() => { const k = 'ssc-demo-data-v7'; const x = JSON.parse(localStorage.getItem(k)); const d = new Date(); d.setDate(d.getDate() - 1); x.trips.t20.arriveDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; x.trips.t20.date = x.trips.t20.arriveDate; localStorage.setItem(k, JSON.stringify(x)); });
   await page.reload(); await page.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
   await go('#home');
   if (await page.locator('button[data-act="homeAllAtt"]').count()) { await page.locator('button[data-act="homeAllAtt"]').click(); await page.waitForTimeout(200); }
   ok(await page.locator('#main .list .row:has-text("ยังไม่ถึง สาขาสุราษฎร์ธานี") .chip.crit').count() === 1, 'home flags a truck that missed the 07:00 hub time');
   ok(/เข้าสาขาทันก่อน 07:00 น\.\s*\d+%/.test(await page.locator('#main').textContent()), 'monthly on-time hub arrival rate shown');
   await shot('m-home-running');
-  await page.evaluate(() => { const k = 'ssc-demo-data-v6'; const x = JSON.parse(localStorage.getItem(k)); const d = new Date(); x.trips.t20.date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; delete x.trips.t20.arriveDate; localStorage.setItem(k, JSON.stringify(x)); localStorage.setItem('ssc-me', JSON.stringify({ driverId: 'd12', vehicleId: 'v12', siteId: 's3' })); });
+  await page.evaluate(() => { const k = 'ssc-demo-data-v7'; const x = JSON.parse(localStorage.getItem(k)); const d = new Date(); x.trips.t20.date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; delete x.trips.t20.arriveDate; localStorage.setItem(k, JSON.stringify(x)); localStorage.setItem('ssc-me', JSON.stringify({ driverId: 'd12', vehicleId: 'v12', siteId: 's3' })); });
   await page.reload(); await page.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
   await go('#checkin');
   ok(await page.locator('h2:has-text("ทริปของฉัน")').count() === 1 && await page.locator('button[data-act="posGps"]').count() === 1, 'driver page shows my running trip with a send-position button');

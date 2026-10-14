@@ -10,7 +10,7 @@ const LIBS = process.argv[4];
 const log = (...a) => console.log(...a);
 let fails = 0;
 const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log('  FAIL', msg); } };
-const KEY = 'ssc-demo-data-v6';
+const KEY = 'ssc-demo-data-v7';
 const dk = n => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 (async () => {
@@ -73,6 +73,23 @@ const dk = n => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.
   await page.fill('#fq', ''); await page.waitForTimeout(500);
   await go('#home');
   ok(await page.locator('a.card[href="#fleet"] .chip:has-text("กำลังวิ่ง 2")').count() === 1, 'home has the all-trucks strip linking to the fleet page');
+
+  log('== factory plates by email ==');
+  await go('#trips');
+  const mail = page.locator('section:has(h2:has-text("แจ้งทะเบียนโรงงาน")) a[href^="mailto:"]').first();
+  const mh = await mail.getAttribute('href').catch(() => '');
+  const mb = mh ? decodeURIComponent((mh.split('body=')[1] || '')) : '';
+  ok(mh.startsWith('mailto:logistics@example.com?subject=') && /เรียน คุณตัวอย่าง/.test(mb) && /แจ้งทะเบียนรถเข้าโหลด Dairy Plus นครสวรรค์/.test(mb) && /ทะเบียน 70-1005/.test(mb), 'email button opens a message to the factory contact with the plates');
+  ok(/ส่งอีเมลถึง คุณตัวอย่าง/.test(await page.locator('section:has(h2:has-text("แจ้งทะเบียนโรงงาน"))').first().textContent()), 'shows who the email goes to');
+  await go('#trip-t21');
+  ok(await page.locator('section:has(h2:has-text("แจ้งทะเบียนโรงงาน")) a[href^="mailto:logistics@example.com"]').count() === 1, 'trip page has the same email button');
+  await go('#master'); await page.locator('button[data-act="masterTab"][data-v="sites"]').click(); await page.waitForTimeout(200);
+  await page.locator('.row:has-text("Dairy Plus นครสวรรค์") button[data-act="edit"]').click(); await page.waitForTimeout(200);
+  await page.fill('#f-notifyEmail', 'logistics@example.com, ผิดรูปแบบ'); await sheetOk();
+  ok(/อีเมลแจ้งทะเบียนไม่ถูกต้อง/.test(await sheetErr()), 'invalid email refused on the place');
+  await page.fill('#f-notifyEmail', 'logistics@example.com, plant2@example.com'); await sheetOk();
+  await go('#trips');
+  ok(((await page.locator('section:has(h2:has-text("แจ้งทะเบียนโรงงาน")) a[href^="mailto:"]').first().getAttribute('href')) || '').startsWith('mailto:logistics@example.com,plant2@example.com?'), 'several recipients go into one email');
 
   log('== route fuel + Feed Card checklist ==');
   await go('#master'); await page.locator('button[data-act="masterTab"][data-v="routes"]').click(); await page.waitForTimeout(200);
