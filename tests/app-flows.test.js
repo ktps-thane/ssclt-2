@@ -393,6 +393,27 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   ok((await demo()).config.settings.southArriveBy === '06:30', 'hub arrival time is editable');
   await go('#settings'); await page.fill('#s-arr', '07:00'); await page.locator('form[data-form="settings"] button[type=submit]').click(); await page.waitForTimeout(250);
 
+  log('== places: Google Maps links for drivers and dispatch ==');
+  await go('#trip-t22');
+  const cbiNav = await page.locator('section:has(h2:has-text("ตำแหน่งและจุดส่ง")) .row:has-text("เดโปชลบุรี") .maplinks a:has-text("นำทาง")').getAttribute('href').catch(() => '');
+  ok(/destination=13\.3611,100\.9847/.test(cbiNav), 'trip stop has a navigation link to the place (' + cbiNav + ')');
+  ok(await page.locator('.row:has-text("Dairy Plus") .maplinks').count() >= 1 && /รับ/.test(await page.locator('.row:has(.maplinks):has-text("Dairy Plus")').first().textContent()), 'trip job shows pick-up and drop-off map links');
+  await go('#orders');
+  const plk = (await page.locator('.row:has-text("เดโปพิษณุโลก") .maplinks a').evaluateAll(els => els.map(e => e.getAttribute('href')))).join(' ');
+  ok(/16\.8559,100\.2189/.test(plk), 'order destination "เดโปพิษณุโลก" finds the saved place "เดโป้พิษณุโลก" (tone mark ignored)');
+  await go('#maint');
+  ok(await page.locator('section:has(h2:has-text("อู่ / ร้านซ่อมที่ใช้ประจำ")) .row:has-text("อู่ตัวอย่าง") .maplinks a').count() >= 1, 'maintenance page lists repair shops with directions');
+  await go('#master'); await page.locator('button[data-act="masterTab"][data-v="sites"]').click(); await page.waitForTimeout(200);
+  ok(/สถานที่/.test(await page.locator('button[data-act="masterTab"][data-v="sites"]').textContent()) && await page.locator('#main .row:has-text("เดโป้พิษณุโลก") .maplinks').count() === 1, 'places tab shows map links');
+  await page.evaluate(() => localStorage.setItem('ssc-me', JSON.stringify({ driverId: 'd05', vehicleId: 'v05', siteId: 'pump' })));
+  await go('#home'); await page.reload(); await page.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
+  await go('#checkin');
+  const navBtn = page.locator('section:has(h2:has-text("ทริปของฉัน")) a.btn:has-text("นำทางไปจุดโหลด Dairy Plus นครสวรรค์")');
+  ok(await navBtn.count() === 1 && /destination=15\.7176,100\.1062/.test(await navBtn.getAttribute('href')), 'driver with a planned trip gets "นำทางไป" the loading point');
+  await shot('m-driver-nav');
+  await page.evaluate(() => localStorage.removeItem('ssc-me'));
+  await go('#home'); await page.reload(); await page.waitForFunction(() => !document.querySelector('#main .loading'), null, { timeout: 15000 });
+
   log('== north trip legs + close ==');
   await go('#trip-t21');
   await page.locator('form[data-form="depart"] button[type=submit]').click(); await page.waitForTimeout(300);
