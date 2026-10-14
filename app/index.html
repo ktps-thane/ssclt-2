@@ -308,6 +308,16 @@ td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
 :root[data-theme="dark"]{ --st-ink:#74d3ab; --st-soft:#12302a; }
 .k-st{background:var(--st-soft);color:var(--st-ink)} .k-ch{background:var(--serious-soft);color:var(--serious-ink)}
 .fleetstats{grid-template-columns:repeat(3,minmax(0,1fr))}
+body.locked .tabbar, body.locked .rail{display:none}
+body.locked .app{grid-template-columns:minmax(0,1fr)}
+body.locked main{max-width:640px}
+.gate{max-width:560px;margin:0 auto;width:100%}
+button.tile{font:inherit}
+button.tile[aria-pressed="true"]{border-color:var(--brand);box-shadow:inset 0 0 0 1px var(--brand);background:var(--brand-soft)}
+#modeChip{display:flex;gap:6px;align-items:center;flex-wrap:nowrap;margin-left:auto}
+.modechip.secchip{background:var(--brand-soft);color:var(--brand-strong)}
+.modechip svg.i{width:14px;height:14px}
+.tile-ico{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--brand-soft);color:var(--brand-strong)}
 @media (min-width:700px){ .fleetstats{grid-template-columns:repeat(6,minmax(0,1fr))} }
 button.stat{border:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
 button.stat[aria-pressed="true"]{background:var(--brand-soft);box-shadow:inset 0 -3px 0 var(--brand)}
@@ -490,7 +500,7 @@ const QG = { 0: ['Backhaul ทันรอบ', 'good'], 1: ['สแตนด์
 /* ================= store ================= */
 const emptyData = () => { const o = {}; COLS.forEach(c => (o[c] = {})); return o; };
 const S = {
-  backend: 'loading', loaded: false, demo: false, readOnly: false, db: null, user: null, uid: null, dl: null, ver: 0,
+  backend: 'loading', loaded: false, demo: false, readOnly: false, isOwner: false, canEdit: false, db: null, user: null, uid: null, dl: null, ver: 0,
   live: emptyData(), demoData: null, parts: {},
   get d() { return this.demo ? this.demoData : this.live; },
 };
@@ -956,8 +966,66 @@ const ui = {
   scan: { mode: 'loaded', tripId: '', branchId: '', code: '', log: [], pending: null, podName: '', codOk: false },
   cash: { code: '', cart: [], cash: '', method: 'cash', last: null, err: '' },
   quotes: { status: 'open' },
+  gate: { role: '' },
 };
 function setPath(path, value) { const ks = path.split('.'); let o = ui; ks.slice(0, -1).forEach(k => (o = o[k])); o[ks[ks.length - 1]] = value; }
+
+/* ================= sections by department: each opened with its own code ================= */
+// Codes hide the pages a department does not use. They are a convenience lock for staff, not data-level security:
+// anyone who can open the link can still read the shared data with developer tools.
+const SECTIONS = {
+  owner: { label: 'เฮีย / ผู้บริหาร', short: 'เฮีย', desc: 'ดูได้ทุกหน้า ค่าตั้งค่า และรหัสเข้าใช้', home: 'home', icon: 'user', pages: null },
+  dispatch: { label: 'ฝ่ายจัดรถ', short: 'จัดรถ', desc: 'ภาพรวม คิว ออเดอร์ จัดรถ ทริป รถทุกคัน งานเหมา', home: 'home', icon: 'truck', pages: ['home', 'fleet', 'queue', 'checkin', 'orders', 'parcels', 'parcel', 'receive', 'scan', 'cashier', 'dispatch', 'trips', 'trip', 'maint', 'master', 'trailers', 'quotes', 'quote', 'more'] },
+  checker: { label: 'เช็คเกอร์ / หน้าร้าน', short: 'เช็คเกอร์', desc: 'รับพัสดุ ลาเบล ยิงบาร์โค้ด แคชเชียร์ คัดแยกนม', home: 'parcels', icon: 'parcel', pages: ['parcels', 'parcel', 'receive', 'scan', 'cashier', 'orders', 'more'] },
+  driver: { label: 'คนขับ', short: 'คนขับ', desc: 'เช็คอิน ทริปของฉัน ส่งงาน', home: 'checkin', icon: 'pin', pages: ['checkin'] },
+};
+const SECTION_ORDER = ['driver', 'checker', 'dispatch', 'owner'];
+const accessCfg = () => (S.live && S.live.config && S.live.config.access) || null;
+const accessOn = () => { const a = accessCfg(); return !!(a && a.salt && a.codes && Object.values(a.codes).some(c => c && c.h)); };
+function section() {
+  if (!accessOn()) return 'owner'; // no codes set: every page is open, as before
+  if (S.isOwner) return 'owner'; // the link owner (เฮีย) never needs a code
+  const sess = ls.get('ssc-session', null); const c = sess && accessCfg().codes[sess.role];
+  return sess && SECTIONS[sess.role] && c && c.h && c.h === sess.h ? sess.role : null;
+}
+const canSee = page => { const sc = section(); return !!sc && (SECTIONS[sc].pages === null || SECTIONS[sc].pages.includes(page)); };
+const fullStaff = () => ['owner', 'dispatch'].includes(section());
+function syncRole() {
+  const sc = section();
+  if (sc === 'driver') role = 'driver';
+  else if (sc === 'checker') role = 'dispatch';
+}
+async function codeHash(salt, sec, code) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${salt}|${sec}|${code}`));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+const CHECKER_NAV = [
+  { id: 'parcels', label: 'พัสดุ', icon: 'parcel' },
+  { id: 'receive', label: 'รับพัสดุ', icon: 'plus' },
+  { id: 'scan', label: 'ยิงบาร์โค้ด', icon: 'scan' },
+  { id: 'cashier', label: 'แคชเชียร์', icon: 'cash' },
+  { id: 'orders', label: 'ออเดอร์', icon: 'box' },
+];
+function gatePage() {
+  const g = ui.gate; const a = accessCfg(); const sess = ls.get('ssc-session', null);
+  const opts = SECTION_ORDER.filter(k => a.codes[k] && a.codes[k].h);
+  if (!g.role && sess && opts.includes(sess.role)) g.role = sess.role;
+  if (!g.role && location.hash === '#checkin' && opts.includes('driver')) g.role = 'driver';
+  const changed = sess && sess.role === g.role && a.codes[g.role] && a.codes[g.role].h !== sess.h;
+  return `<div class="gate stack">
+    <div class="card pad stack">
+      <h2>เข้าใช้งานระบบจัดรถ SSC</h2>
+      <p class="meta">เลือกแผนกของคุณ แล้วใส่รหัสที่ได้รับจากเฮีย</p>
+      <div class="tiles">${opts.map(k => `<button type="button" class="tile" data-act="gateRole" data-v="${k}" aria-pressed="${g.role === k}"><span class="ico">${icon(SECTIONS[k].icon)}</span><span><b>${esc(SECTIONS[k].label)}</b><span>${esc(SECTIONS[k].desc)}</span></span></button>`).join('')}</div>
+      ${g.role ? `<form class="stack" data-form="gate" novalidate>
+        ${changed ? '<div class="note warn small">รหัสของแผนกนี้ถูกเปลี่ยนแล้ว ใส่รหัสใหม่ที่ได้รับ</div>' : ''}
+        <div class="field"><label class="req" for="gate-code">รหัสเข้าใช้ · ${esc(SECTIONS[g.role].label)}</label><input id="gate-code" name="code" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="ใส่รหัส"></div>
+        <button class="btn primary big" type="submit">${icon('check')}เข้าใช้งาน</button>
+      </form>` : ''}
+    </div>
+    <p class="small muted">เข้าครั้งเดียว เครื่องนี้จำไว้จนกว่าจะกดออกจากระบบ หรือเฮียเปลี่ยนรหัส · ลืมรหัสติดต่อเฮีย</p>
+  </div>`;
+}
 
 /* ================= routing & render ================= */
 const NAV = [
@@ -980,34 +1048,47 @@ const MORE = [
   { id: 'master', label: 'ข้อมูลหลัก', icon: 'db', desc: 'รถ คนขับ จุดเช็คอิน สาขา เส้นทาง' },
   { id: 'trailers', label: 'หางสำรอง', icon: 'trailer', desc: 'ประวัติการเบิก/คืนหาง' },
   { id: 'settings', label: 'ค่าตั้งค่า', icon: 'sliders', desc: 'น้ำมันมาตรฐาน เกณฑ์ปล่อยรถ ฯลฯ' },
+  { id: 'access', label: 'สิทธิ์และรหัสเข้าใช้', icon: 'user', desc: 'แบ่งหน้าตามแผนก ตั้งรหัสแต่ละแผนก' },
   { id: 'spec', label: 'ร่างระบบเช็คอิน', icon: 'doc', desc: 'ต้องเก็บอะไรบ้าง กฎคิว' },
   { id: 'pending', label: 'รอข้อมูล / คำถาม', icon: 'list', desc: 'ไฟล์ที่รอ และเรื่องที่ยืนยันแล้ว' },
 ];
-const TITLES = { home: 'ภาพรวม', fleet: 'รถทุกคัน', quotes: 'งานเหมา / ใบเสนอราคา', quote: 'ใบเสนอราคา', cashier: 'แคชเชียร์หน้าร้าน', queue: 'คิวรถ', checkin: 'เช็คอินคนขับ', orders: 'ออเดอร์', parcels: 'พัสดุรายบิล', parcel: 'รายละเอียดพัสดุ', receive: 'รับพัสดุ', scan: 'ยิงบาร์โค้ด', dispatch: 'จัดรถ / Matching', trips: 'ทริป', trip: 'รายละเอียดทริป', maint: 'Maintenance', master: 'ข้อมูลหลัก', trailers: 'หางสำรอง', settings: 'ค่าตั้งค่า', spec: 'ร่างระบบเช็คอิน', pending: 'รอข้อมูล / คำถาม', more: 'เพิ่มเติม' };
+const TITLES = { home: 'ภาพรวม', access: 'สิทธิ์และรหัสเข้าใช้', fleet: 'รถทุกคัน', quotes: 'งานเหมา / ใบเสนอราคา', quote: 'ใบเสนอราคา', cashier: 'แคชเชียร์หน้าร้าน', queue: 'คิวรถ', checkin: 'เช็คอินคนขับ', orders: 'ออเดอร์', parcels: 'พัสดุรายบิล', parcel: 'รายละเอียดพัสดุ', receive: 'รับพัสดุ', scan: 'ยิงบาร์โค้ด', dispatch: 'จัดรถ / Matching', trips: 'ทริป', trip: 'รายละเอียดทริป', maint: 'Maintenance', master: 'ข้อมูลหลัก', trailers: 'หางสำรอง', settings: 'ค่าตั้งค่า', spec: 'ร่างระบบเช็คอิน', pending: 'รอข้อมูล / คำถาม', more: 'เพิ่มเติม' };
 const TAB_OF = { trip: 'trips', parcel: 'parcels', receive: 'parcels', scan: 'parcels', cashier: 'parcels', quote: 'more' };
 let role = ls.get('ssc-role', null);
 if (!role) role = (location.hash === '#checkin') ? 'driver' : 'dispatch';
 function currentRoute() {
+  syncRole();
   if (role === 'driver') return { page: 'checkin', arg: '' };
   const h = (location.hash || '').replace(/^#/, '') || 'home';
   const i = h.indexOf('-');
-  const page = i > 0 ? h.slice(0, i) : h; const arg = i > 0 ? h.slice(i + 1) : '';
-  return { page: TITLES[page] ? page : 'home', arg };
+  let page = i > 0 ? h.slice(0, i) : h; const arg = i > 0 ? h.slice(i + 1) : '';
+  if (!TITLES[page]) page = 'home';
+  const sc = section();
+  if (sc && !canSee(page)) return { page: SECTIONS[sc].home, arg: '' }; // a department only opens its own pages
+  return { page, arg };
 }
+const locked = () => S.loaded && !section();
 function renderChrome() {
   const { page } = currentRoute();
+  const isLocked = locked(); const sc = section();
   document.body.classList.toggle('driver', role === 'driver');
-  const activeTab = MORE.some(m => m.id === page) && !TAB_OF[page] ? 'more' : (TAB_OF[page] || page);
-  $('#tabbar').innerHTML = NAV.map(n => `<a href="#${n.id}" ${activeTab === n.id ? 'aria-current="page"' : ''}>${icon(n.icon)}<span>${n.label}</span></a>`).join('');
-  const railLink = n => `<a href="#${n.id}" ${(page === n.id || (!MORE.some(m => m.id === page) && TAB_OF[page] === n.id)) ? 'aria-current="page"' : ''}>${icon(n.icon)}${n.label}</a>`;
+  document.body.classList.toggle('locked', isLocked);
+  const nav = sc === 'checker' ? [...CHECKER_NAV, NAV[NAV.length - 1]] : NAV.filter(n => canSee(n.id));
+  const navIds = nav.map(n => n.id);
+  const activeTab = navIds.includes(page) ? page : navIds.includes(TAB_OF[page]) ? TAB_OF[page] : 'more';
+  $('#tabbar').innerHTML = nav.map(n => `<a href="#${n.id}" ${activeTab === n.id ? 'aria-current="page"' : ''}>${icon(n.icon)}<span>${n.label}</span></a>`).join('');
+  const railLink = n => `<a href="#${n.id}" ${(page === n.id || (!navIds.includes(page) && TAB_OF[page] === n.id)) ? 'aria-current="page"' : ''}>${icon(n.icon)}${n.label}</a>`;
+  const moreItems = MORE.filter(m => canSee(m.id) && !navIds.includes(m.id));
   $('#rail').innerHTML = `<div class="brand"><img alt="SSC" src="${$('.top .logo').src}"><div><b>ภูเก็ตศรีสุชาติขนส่ง</b><small>ระบบจัดรถ · แบบร่าง V3</small></div></div>`
-    + NAV.filter(n => n.id !== 'more').map(railLink).join('')
-    + `<div class="sep"></div><div class="grp">เพิ่มเติม</div>` + MORE.map(railLink).join('');
+    + nav.filter(n => n.id !== 'more').map(railLink).join('')
+    + (moreItems.length ? `<div class="sep"></div><div class="grp">เพิ่มเติม</div>` + moreItems.map(railLink).join('') : '');
   const chipEl = $('#modeChip');
-  if (!S.loaded) chipEl.innerHTML = '';
-  else if (S.demo) chipEl.innerHTML = `<button class="modechip demo" data-act="modeInfo"><span class="dot"></span>โหมดทดลอง</button>`;
-  else if (S.backend === 'db') chipEl.innerHTML = `<button class="modechip live" data-act="modeInfo"><span class="dot"></span>ข้อมูลจริง</button>`;
-  else chipEl.innerHTML = `<button class="modechip" data-act="modeInfo"><span class="dot"></span>บันทึกในเครื่องนี้</button>`;
+  const secChip = S.loaded && accessOn() && sc ? `<button class="modechip secchip" data-act="secInfo">${icon(SECTIONS[sc].icon)}${esc(S.isOwner && sc === 'owner' ? 'เฮีย (เจ้าของ)' : SECTIONS[sc].short)}</button>` : '';
+  if (!S.loaded || isLocked) chipEl.innerHTML = '';
+  else if (S.demo) chipEl.innerHTML = secChip + `<button class="modechip demo" data-act="modeInfo"><span class="dot"></span>โหมดทดลอง</button>`;
+  else if (S.backend === 'db') chipEl.innerHTML = secChip + `<button class="modechip live" data-act="modeInfo"><span class="dot"></span>ข้อมูลจริง</button>`;
+  else chipEl.innerHTML = secChip + `<button class="modechip" data-act="modeInfo"><span class="dot"></span>บันทึกในเครื่องนี้</button>`;
+  if (isLocked) { $('#banner').innerHTML = ''; $('#pageTitle').textContent = 'เข้าใช้งาน'; return; }
   let b = '';
   if (S.loaded && S.demo) b += `<div class="banner"><span><b>โหมดทดลอง</b> ข้อมูลทั้งหมดเป็นข้อมูลสมมติเพื่อดูการทำงาน ไม่บันทึกเข้าระบบจริง</span><button class="btn sm" data-act="demoOff">ใช้ข้อมูลจริง</button></div>`;
   if (S.loaded && !S.demo && S.readOnly) b += `<div class="banner ro"><span><b>ดูได้อย่างเดียว</b> บัญชีนี้ไม่มีสิทธิ์บันทึก ขอสิทธิ์บันทึกจากเจ้าของลิงก์</span></div>`;
@@ -1027,6 +1108,7 @@ function doRender(force) {
   const focusId = ae && main.contains(ae) && ae.id ? ae.id : null;
   let selS = null, selE = null; try { selS = ae.selectionStart; selE = ae.selectionEnd; } catch {}
   if (!S.loaded) { main.innerHTML = '<div class="loading">กำลังโหลดข้อมูล…</div>'; return; }
+  if (locked()) { main.innerHTML = gatePage(); return; }
   const { page, arg } = currentRoute();
   const fn = PAGES[page] || PAGES.home;
   try { main.innerHTML = fn(arg); }
@@ -1038,6 +1120,9 @@ function doRender(force) {
 }
 document.addEventListener('focusout', () => { if (deferred && !formDirty) { deferred = false; setTimeout(() => render(), 0); } });
 window.addEventListener('hashchange', () => { formDirty = false; renderChrome(); render({ force: true }); window.scrollTo(0, 0); });
+// re-check the lock when the shared data changes (a code changed by เฮีย logs that department out)
+let lastLock = null;
+setInterval(() => { if (!S.loaded) return; const l = locked() + '|' + section(); if (lastLock !== null && l !== lastLock) { renderChrome(); render({ force: true }); } lastLock = l; }, 2000);
 
 /* ================= pages ================= */
 const PAGES = {};
@@ -1358,7 +1443,7 @@ PAGES.checkin = () => {
   const site = d.sites[ui.ci.siteId]; const cut = cutoffMin(site);
   const mine = Object.values(d.checkins).filter(c => (c.status === 'waiting' || (c.status === 'assigned' && c.day >= addDays(dayKey(), -1))) && ((ui.ci.driverId && c.driverId === ui.ci.driverId) || (ui.ci.vehicleId && c.vehicleId === ui.ci.vehicleId))).sort(byAt).pop();
   const roleBar = role === 'driver'
-    ? `<p class="small muted" style="text-align:center">หน้าสำหรับคนขับ · <button class="btn ghost sm" data-act="role" data-v="dispatch">สลับเป็นฝ่ายจัดรถ</button></p>`
+    ? `<p class="small muted" style="text-align:center">หน้าสำหรับคนขับ · ${fullStaff() ? `<button class="btn ghost sm" data-act="role" data-v="dispatch">สลับเป็นฝ่ายจัดรถ</button>` : accessOn() ? `<button class="btn ghost sm" data-act="logout">ออกจากระบบ</button>` : ''}</p>`
     : `<div class="note">หน้านี้คือหน้าที่คนขับเห็นเมื่อเปิดลิงก์ที่ลงท้ายด้วย <b class="mono">#checkin</b> <button class="btn ghost sm" data-act="role" data-v="driver">ดูแบบคนขับ</button> <button class="btn ghost sm" data-act="copyLink" data-v="checkin">${icon('copy')}คัดลอกลิงก์ให้คนขับ</button></div>`;
   if (mine && !ui.ci.showForm) return roleBar + myTripCard() + ticket(mine);
   if (!vehicles.length || !sites.length) return roleBar + `<div class="card">${empty('ยังเช็คอินไม่ได้', !vehicles.length ? 'ยังไม่มีข้อมูลรถในระบบ ฝ่ายจัดรถต้องเพิ่มรถก่อน (เมนู ข้อมูลหลัก)' : 'ยังไม่มีจุดเช็คอิน ฝ่ายจัดรถต้องเพิ่มจุดก่อน (เมนู ข้อมูลหลัก)', role === 'dispatch' ? '<a class="btn primary" href="#master">ไปที่ข้อมูลหลัก</a>' : '')}</div>`;
@@ -1574,7 +1659,7 @@ function orderRow(x) {
     ${x.kind === 'STORE' ? `<div class="l1">${children.length ? chip('good', `Checker คัดแยกแล้ว ${children.length} รายการ`, 'split') : chip('warn', 'ยังไม่ได้คัดแยกที่สาย 3', 'split')}</div>` : ''}
     ${x.parentId && S.d.orders[x.parentId] ? `<div class="small muted">คัดแยกจาก ${esc(S.d.orders[x.parentId].customer || '')} ${esc(S.d.orders[x.parentId].ref || '')}</div>` : ''}
     ${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}
-    <div class="actions">${x.status === 'open' ? `<button class="btn sm primary" data-act="ordToDispatch" data-id="${esc(x.id)}">จัดรถ</button>` : ''}${x.kind === 'STORE' ? `<button class="btn sm" data-act="sortStore" data-id="${esc(x.id)}" ${dis()}>${icon('split')}คัดแยกที่สาย 3</button>` : ''}${x.tripId && S.d.trips[x.tripId] ? `<a class="btn sm" href="#trip-${esc(x.tripId)}">ดูทริป ${esc(S.d.trips[x.tripId].no)}</a>` : ''}<button class="btn sm" data-act="edit" data-col="orders" data-id="${esc(x.id)}" ${dis()}>แก้ไข</button>${x.status === 'open' ? `<button class="btn sm danger" data-act="delete" data-col="orders" data-id="${esc(x.id)}" ${dis()}>ลบ</button>` : ''}</div>
+    <div class="actions">${x.status === 'open' && canSee('dispatch') ? `<button class="btn sm primary" data-act="ordToDispatch" data-id="${esc(x.id)}">จัดรถ</button>` : ''}${x.kind === 'STORE' ? `<button class="btn sm" data-act="sortStore" data-id="${esc(x.id)}" ${dis()}>${icon('split')}คัดแยกที่สาย 3</button>` : ''}${x.tripId && S.d.trips[x.tripId] && canSee('trip') ? `<a class="btn sm" href="#trip-${esc(x.tripId)}">ดูทริป ${esc(S.d.trips[x.tripId].no)}</a>` : ''}<button class="btn sm" data-act="edit" data-col="orders" data-id="${esc(x.id)}" ${dis()}>แก้ไข</button>${x.status === 'open' ? `<button class="btn sm danger" data-act="delete" data-col="orders" data-id="${esc(x.id)}" ${dis()}>ลบ</button>` : ''}</div>
   </div></div>`;
 }
 function openSortStore(id) {
@@ -1638,7 +1723,7 @@ PAGES.parcels = () => {
   <div class="sec-h">${seg('parcelStatus', P.status, [['late', 'ล่าช้า', lateAll.length], ['received', 'รอขึ้นรถ', cnt('received')], ['loaded', 'ขึ้นรถแล้ว', cnt('loaded')], ['arrived', 'ถึงปลายทาง', cnt('arrived')], ['delivered', 'ส่งแล้ว', cnt('delivered')], ['all', 'ทั้งหมด']])}
     <div class="rowflex"><a class="btn" href="#scan">${icon('scan')}ยิงบาร์โค้ด</a><a class="btn" href="#cashier">${icon('cash')}แคชเชียร์</a><a class="btn primary" href="#receive">${icon('plus')}รับพัสดุ</a></div></div>
   <div class="field"><label class="sr" for="pq">ค้นหา</label><input id="pq" data-bind="parcels.q" data-rerender="debounce" value="${esc(P.q)}" placeholder="ค้นด้วยเลขพัสดุ ชื่อ หรือเบอร์โทร ผู้ส่ง/ผู้รับ"></div>
-  ${P.status === 'received' && !P.q.trim() && groups.length ? `<section class="sec"><div class="sec-h"><h2>รอขึ้นรถ แยกปลายทาง</h2><a class="btn sm" href="#dispatch">นำไปจัดรถ</a></div>
+  ${P.status === 'received' && !P.q.trim() && groups.length ? `<section class="sec"><div class="sec-h"><h2>รอขึ้นรถ แยกปลายทาง</h2>${canSee('dispatch') ? '<a class="btn sm" href="#dispatch">นำไปจัดรถ</a>' : ''}</div>
     <div class="tbl-wrap"><table><thead><tr><th>ปลายทาง</th><th class="r">บิล</th><th class="r">กล่อง</th><th class="r">กก.</th><th class="r">ค่าส่ง</th><th class="r">เก็บปลายทาง</th><th>ส่งเร็วสุด</th></tr></thead><tbody>${groups.map(g => `<tr><td>${esc(g.name)}</td><td class="r">${g.parcels.length}</td><td class="r">${fmt(g.boxes)}</td><td class="r">${fmt(g.weightKg)}</td><td class="r">${money(g.fee)}</td><td class="r">${money(g.cod)}</td><td>${g.earliestDue ? thDate(g.earliestDue) : '–'}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
   ${P.status === 'late' && !P.q.trim() ? `<div class="note ${lateAll.length ? 'crit' : 'good'} small">${lateAll.length ? `พัสดุเลยกำหนดส่งถึงลูกค้า ${lateAll.length} บิล เรียงจากช้ามากสุด ตามงานก่อน (${[['ยังอยู่สาย 3', lateAll.filter(p => p.status === 'received' && !tripLeft(p.tripId)).length], ['อยู่บนรถ', lateAll.filter(p => tripLeft(p.tripId) && p.status !== 'arrived').length], ['ถึงสาขารอส่ง', lateAll.filter(p => p.status === 'arrived').length]].filter(x => x[1]).map(x => x.join(' ')).join(' · ')})` : 'ไม่มีพัสดุที่เลยกำหนดส่ง'}</div>` : ''}
   <div class="list">${list.length ? list.slice(0, 200).map(parcelRow).join('') : empty(P.q.trim() ? 'ไม่พบพัสดุที่ค้นหา' : 'ไม่มีพัสดุในกลุ่มนี้', P.status === 'late' ? 'พัสดุทุกบิลอยู่ในกำหนดส่ง' : 'กด "รับพัสดุ" เพื่อบันทึกบิลใหม่และพิมพ์ลาเบล')}</div>
@@ -1755,7 +1840,7 @@ PAGES.parcel = id => {
       <div><span>ปลายทาง</span><b>${esc(p.province || '-')}</b><em>${p.branchId ? esc(siteName(p.branchId)) : 'ยังไม่ระบุสาขา'} · ${p.deliveryMode === 'pickup' ? 'ลูกค้ารับเอง' : 'ส่งถึงลูกค้า'}</em></div>
       <div><span>กล่อง / น้ำหนัก</span><b>${fmt(num(p.boxes))} / ${fmt(num(p.weightKg), 1)} กก.</b><em>ขึ้นรถ ${lb}/${p.boxes} · ถึงปลายทาง ${ab}/${p.boxes}</em></div>
       <div><span>ค่าขนส่ง</span><b>${money(num(p.fee))}</b><em>${p.payer === 'cod' ? (p.codCollected ? 'เก็บปลายทางแล้ว' : 'เก็บปลายทาง (ยังไม่ได้เก็บ)') : p.paid ? `ผู้ส่งจ่ายแล้ว ${p.paid.method === 'transfer' ? '(โอน)' : '(เงินสด)'} ${thDT(p.paid.at)}` : 'ผู้ส่งจ่ายที่ต้นทาง · ยังไม่ชำระ'}</em></div>
-      <div><span>ทริป</span><b>${t ? `<a href="#trip-${esc(t.id)}">${esc(t.no)}</a>` : '–'}</b><em>${t ? esc(plateText(t)) : 'ยังไม่ได้ขึ้นรถ'}</em></div>
+      <div><span>ทริป</span><b>${t ? (canSee('trip') ? `<a href="#trip-${esc(t.id)}">${esc(t.no)}</a>` : esc(t.no)) : '–'}</b><em>${t ? esc(plateText(t)) : 'ยังไม่ได้ขึ้นรถ'}</em></div>
     </div>
     ${p.description ? `<p class="meta">สินค้า: ${esc(p.description)}</p>` : ''}${p.note ? `<p class="small muted">หมายเหตุ: ${esc(p.note)}</p>` : ''}
     ${p.podName ? `<p class="meta">ผู้รับของ: <b>${esc(p.podName)}</b> · ${thDT(p.deliveredAt)}</p>` : ''}
@@ -3417,6 +3502,34 @@ PAGES.trailers = () => {
   </div></div>`; }).join('') : empty('ยังไม่มีประวัติหางสำรอง', 'กด "เบิกหาง" เมื่อมีการเปลี่ยนไปใช้หางอื่น')}</div>`;
 };
 
+/* ---------- sections and access codes (owner) ---------- */
+PAGES.access = () => {
+  const a = accessCfg() || {}; const codes = a.codes || {}; const on = accessOn();
+  const can = !S.demo && (S.backend !== 'db' || S.isOwner);
+  const pageList = sc => SECTIONS[sc].pages ? uniq(SECTIONS[sc].pages.filter(x => TITLES[x] && !['parcel', 'trip', 'quote', 'more'].includes(x)).map(x => TITLES[x])).join(' · ') : 'ทุกหน้า รวมค่าตั้งค่า และหน้านี้';
+  return `
+  <div class="note ${on ? 'good' : 'warn'} small">${on ? 'เปิดใช้รหัสแล้ว: คนที่เปิดลิงก์ต้องเลือกแผนกและใส่รหัส จึงเห็นเฉพาะหน้าของแผนกตัวเอง' : 'ยังไม่ได้ตั้งรหัส: ทุกคนที่เปิดลิงก์เห็นทุกหน้า ตั้งรหัสอย่างน้อย 1 แผนกเพื่อเริ่มแบ่งสิทธิ์'}</div>
+  ${S.demo ? '<div class="note warn small">ตอนนี้เป็นโหมดทดลอง รหัสใช้กับข้อมูลจริง กด "ใช้ข้อมูลจริง" ก่อนตั้งรหัส</div>' : ''}
+  ${S.backend === 'db' && !S.isOwner ? '<div class="note warn small">ตั้งหรือเปลี่ยนรหัสได้เฉพาะบัญชีเจ้าของลิงก์ (เฮีย)</div>' : ''}
+  <div class="list">${SECTION_ORDER.map(sc => { const c = codes[sc]; return `<div class="row"><div class="main">
+    <div class="l1"><span class="tile-ico">${icon(SECTIONS[sc].icon)}</span><b>${esc(SECTIONS[sc].label)}</b> ${c && c.h ? chip('good', 'ตั้งรหัสแล้ว ' + thDT(c.at), 'check') : chip('', sc === 'owner' ? 'ไม่ตั้งก็ได้' : 'ยังไม่ตั้งรหัส')}</div>
+    <div class="small meta">${esc(pageList(sc))}</div>
+    ${sc === 'owner' ? '<div class="small muted">บัญชีเจ้าของลิงก์ (เฮีย) เข้าได้ทุกหน้าโดยไม่ต้องใส่รหัส ตั้งรหัสนี้เฉพาะเมื่อให้คนอื่นดูได้ทั้งหมด</div>' : ''}
+    <form class="rowflex" data-form="accessCode" data-sec="${sc}" novalidate style="align-items:flex-end">
+      <div class="field" style="flex:1;min-width:150px"><label for="ac-${sc}">${c && c.h ? 'เปลี่ยนรหัส' : 'ตั้งรหัส'}</label><input id="ac-${sc}" name="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="อย่างน้อย 4 ตัว" ${can ? '' : 'disabled'}></div>
+      <button class="btn sm primary" type="submit" ${can ? '' : 'disabled'}>บันทึกรหัส</button>
+      ${c && c.h ? `<button class="btn sm ghost" type="button" data-act="accessClear" data-v="${sc}" ${can ? '' : 'disabled'}>ยกเลิกรหัส</button>` : ''}
+    </form>
+  </div></div>`; }).join('')}</div>
+  <section class="card pad stack"><h2>ใช้งานอย่างไร</h2><ol class="small meta" style="margin:0;padding-left:20px">
+    <li>ตั้งรหัสแต่ละแผนก แล้วส่งรหัสให้คนในแผนกนั้น (ส่งลิงก์เดียวกันทุกคน)</li>
+    <li>เปิดลิงก์ครั้งแรก เลือกแผนก ใส่รหัส เครื่องนั้นจะจำไว้</li>
+    <li>เปลี่ยนรหัสเมื่อมีคนออก เครื่องที่ใช้รหัสเดิมจะออกจากระบบทันที</li>
+    <li>คนขับเปิดลิงก์ที่ลงท้ายด้วย #checkin ระบบเลือกแผนกคนขับให้</li>
+  </ol>
+  <p class="small muted">รหัสใช้แบ่งหน้าจอตามแผนก ไม่ใช่การล็อกข้อมูลขั้นสูง คนที่มีลิงก์และรู้วิธีเปิดเครื่องมือนักพัฒนาของเบราว์เซอร์ยังอ่านข้อมูลได้ ถ้าต้องการล็อกข้อมูลจริงจัง ต้องย้ายขึ้นเซิร์ฟเวอร์ของบริษัท หรือใช้ระดับสิทธิ์ในเมนู Share ของลิงก์</p></section>`;
+};
+
 /* ---------- settings ---------- */
 PAGES.settings = () => {
   const s = settings();
@@ -3476,10 +3589,10 @@ PAGES.settings = () => {
 
 /* ---------- more / spec / pending ---------- */
 PAGES.more = () => `
-  <div class="tiles">${MORE.map(m => `<a class="tile" href="#${m.id}"><span class="ico">${icon(m.icon)}</span><span><b>${m.label}</b><span>${m.desc}</span></span></a>`).join('')}</div>
+  <div class="tiles">${MORE.filter(m => canSee(m.id) && !(section() === 'checker' && CHECKER_NAV.some(n => n.id === m.id))).map(m => `<a class="tile" href="#${m.id}"><span class="ico">${icon(m.icon)}</span><span><b>${m.label}</b><span>${m.desc}</span></span></a>`).join('')}</div>
   <section class="card pad stack">
     <h2>การใช้งาน</h2>
-    <div class="rowflex">${S.demo ? `<button class="btn" data-act="demoOff">ใช้ข้อมูลจริง</button><button class="btn" data-act="demoReset">รีเซ็ตข้อมูลทดลอง</button>` : `<button class="btn" data-act="demoOn">เปิดโหมดทดลอง</button>`}<button class="btn" data-act="role" data-v="driver">ดูแบบคนขับ</button><button class="btn" data-act="copyLink" data-v="checkin">${icon('copy')}คัดลอกลิงก์เช็คอินให้คนขับ</button></div>
+    <div class="rowflex">${S.demo ? `<button class="btn" data-act="demoOff">ใช้ข้อมูลจริง</button><button class="btn" data-act="demoReset">รีเซ็ตข้อมูลทดลอง</button>` : `<button class="btn" data-act="demoOn">เปิดโหมดทดลอง</button>`}${fullStaff() ? `<button class="btn" data-act="role" data-v="driver">ดูแบบคนขับ</button><button class="btn" data-act="copyLink" data-v="checkin">${icon('copy')}คัดลอกลิงก์เช็คอินให้คนขับ</button>` : ''}${accessOn() && !(S.isOwner && section() === 'owner') ? '<button class="btn danger" data-act="logout">ออกจากระบบ / เปลี่ยนแผนก</button>' : ''}</div>
     <p class="small muted">${S.backend === 'db' ? 'ข้อมูลจริงเก็บบนระบบของลิงก์นี้ ทุกเครื่องที่เปิดลิงก์เห็นข้อมูลเดียวกันทันที' : 'เปิดไฟล์นอก Claude: ข้อมูลจริงเก็บในเบราว์เซอร์เครื่องนี้เท่านั้น'} · แบบร่าง V3</p>
   </section>`;
 
@@ -3578,6 +3691,7 @@ PAGES.pending = () => {
       <li><b>แจ้งทะเบียนโรงงาน:</b> ภายในประมาณ 14:00 น. ไม่แจ้งระบบเด้งเตือน · แจ้งทางอีเมล Dairy Plus นครสวรรค์ส่งถึงคุณอิ้ง (เพิ่มผู้รับได้ที่ ข้อมูลหลัก → สถานที่)</li>
       <li><b>หน้าร้าน:</b> Checker รับของ (ผู้ส่ง ผู้รับ ที่อยู่ สินค้า จำนวน ราคา) ออกลาเบล แคชเชียร์ยิงลาเบลคิดเงินและเงินทอน</li>
       <li><b>งานเหมา:</b> ลูกค้ากำหนดจุดรับ-จุดส่ง ทำใบเสนอราคาให้ลูกค้า</li>
+      <li><b>แบ่งสิทธิ์ตามแผนก:</b> คนขับ · เช็คเกอร์ · ฝ่ายจัดรถ · เฮีย (ดูได้ทั้งหมด) แต่ละแผนกใช้รหัสของตัวเอง เห็นเฉพาะหน้าของแผนก</li>
     </ol></div></section>
   <section class="sec"><h2>เรื่องที่ยังต้องถาม</h2>
     <div class="card pad doc"><ol>
@@ -3616,7 +3730,7 @@ const popupOn = () => ls.get('ssc-popup', 'on') !== 'off';
 let URGENT = [];
 let urgentRetry = null;
 function checkUrgent() {
-  if (!S.loaded || role === 'driver' || !popupOn()) return;
+  if (!S.loaded || role === 'driver' || !popupOn() || !fullStaff()) return;
   if (!$('#sheet').hidden || formDirty) { clearTimeout(urgentRetry); urgentRetry = setTimeout(checkUrgent, 8000); return; } // busy: try again shortly
   const seen = new Set(ss.get('ssc-urgent-seen', []));
   const items = urgentItems().filter(x => !seen.has(x.key)); if (!items.length) return;
@@ -3662,7 +3776,10 @@ const ACT = {
   demoOff: () => { setDemo(false); renderChrome(); render({ force: true }); toast('ใช้ข้อมูลจริง'); },
   demoReset: () => confirmSheet('รีเซ็ตข้อมูลทดลอง', 'ข้อมูลสมมติทั้งหมดในเครื่องนี้จะกลับเป็นค่าเริ่มต้น ข้อมูลจริงไม่ได้รับผลกระทบ', 'รีเซ็ต', async () => { S.demoData = makeDemo(); S.ver++; saveDemo(); render({ force: true }); toast('รีเซ็ตแล้ว'); }),
   modeInfo: () => openSheet({ title: 'แหล่งข้อมูล', body: `<div class="stack"><p class="meta">${S.demo ? '<b>โหมดทดลอง:</b> ใช้ข้อมูลสมมติที่เก็บในเครื่องนี้ ไม่กระทบข้อมูลจริง ใช้ลองกดดูขั้นตอนต่างๆ ได้เต็มที่' : S.backend === 'db' ? '<b>ข้อมูลจริง:</b> ทุกคนที่เปิดลิงก์นี้เห็นข้อมูลชุดเดียวกัน และอัปเดตทันทีเมื่อมีคนบันทึก' : '<b>บันทึกในเครื่องนี้:</b> เปิดไฟล์นอก Claude ข้อมูลอยู่ในเบราว์เซอร์เครื่องนี้เท่านั้น'}</p>${S.readOnly && !S.demo ? '<p class="note crit small">บัญชีนี้ดูได้อย่างเดียว</p>' : ''}<div class="rowflex">${S.demo ? '<button type="button" class="btn" data-act="demoOff">ใช้ข้อมูลจริง</button>' : '<button type="button" class="btn" data-act="demoOn">เปิดโหมดทดลอง</button>'}</div></div>`, submit: 'ปิด', onSubmit: () => {} }),
-  role: el => { role = el.dataset.v; ls.set('ssc-role', role); renderChrome(); if (role === 'driver') location.hash = '#checkin'; else if (location.hash === '#checkin') location.hash = '#queue'; render({ force: true }); },
+  gateRole: el => { ui.gate.role = el.dataset.v; render({ force: true }); setTimeout(() => { const i = $('#gate-code'); if (i) i.focus(); }, 80); },
+  secInfo: () => { const sc = section(); if (!sc) return; const pages = SECTIONS[sc].pages; openSheet({ title: 'เข้าใช้งานเป็น ' + (S.isOwner && sc === 'owner' ? 'เฮีย (เจ้าของลิงก์)' : SECTIONS[sc].label), submit: 'ปิด', onSubmit: () => {}, body: `<div class="stack"><p class="meta">${pages ? 'หน้าที่ใช้ได้: ' + esc(uniq(pages.filter(x => TITLES[x] && !['parcel', 'trip', 'quote', 'more'].includes(x)).map(x => TITLES[x])).join(' · ')) : 'ใช้ได้ทุกหน้า รวมค่าตั้งค่า และสิทธิ์และรหัสเข้าใช้'}</p>${S.isOwner && sc === 'owner' ? '<p class="small muted">บัญชีนี้เป็นเจ้าของลิงก์ เข้าได้ทุกหน้าโดยไม่ต้องใส่รหัส</p>' : `<button type="button" class="btn danger" data-act="logout">ออกจากระบบ / เปลี่ยนแผนก</button>`}</div>` }); },
+  logout: () => { ls.set('ssc-session', null); ls.set('ssc-role', null); role = 'dispatch'; ui.gate = { role: '' }; renderChrome(); render({ force: true }); toast('ออกจากระบบแล้ว'); },
+  role: el => { if (!fullStaff()) return; role = el.dataset.v; ls.set('ssc-role', role); renderChrome(); if (role === 'driver') location.hash = '#checkin'; else if (location.hash === '#checkin') location.hash = '#queue'; render({ force: true }); },
   copyLink: el => copy(linkFor(el.dataset.v)),
   copyText: el => copy(el.dataset.v),
   homeLine: el => { ui.home.line = el.dataset.v; render({ force: true }); },
@@ -3718,6 +3835,7 @@ const ACT = {
   quoteStatus: async el => { const q = S.d.quotes[el.dataset.id]; if (!q) return; try { await patch('quotes', q.id, { status: el.dataset.v, [el.dataset.v + 'At']: new Date().toISOString() }); } catch { return; } toast(el.dataset.v === 'sent' ? 'บันทึกว่าส่งลูกค้าแล้ว' : 'บันทึกว่าไม่ได้งาน'); },
   quoteWin: el => { const q = S.d.quotes[el.dataset.id]; if (!q) return; okSheet('ลูกค้าตกลงราคา', `สร้างออเดอร์งานเหมา ${esc(q.customer)}: ${esc(q.pickup ? q.pickup.name : '')} → ${esc(q.drop ? q.drop.name : '')} ราคา ${money(num(q.price))} แล้วไปจัดรถต่อ${(q.pickup && q.pickup.lat !== null && !siteFor(q.pickup.name)) || (q.drop && q.drop.lat !== null && !siteFor(q.drop.name)) ? ' (บันทึกจุดรับ-ส่งที่มีพิกัดเป็นสถานที่ให้คนขับกดนำทางได้)' : ''}`, 'สร้างออเดอร์', async () => { await quoteToOrder(q); }); },
   quoteStatusTab: el => { ui.quotes.status = el.dataset.v; render({ force: true }); },
+  accessClear: el => { const sc = el.dataset.v; const cur = accessCfg(); if (!cur || !cur.codes || !cur.codes[sc]) return; confirmSheet('ยกเลิกรหัส', `ยกเลิกรหัสของ ${esc(SECTIONS[sc].label)}? เครื่องที่เข้าด้วยรหัสนี้จะออกจากระบบ${Object.keys(cur.codes).filter(k => cur.codes[k] && cur.codes[k].h).length === 1 ? ' และเมื่อไม่มีรหัสเหลือ ทุกหน้าจะเปิดให้ทุกคนที่มีลิงก์' : ''}`, 'ยกเลิกรหัส', async () => { const codes = { ...cur.codes }; delete codes[sc]; await put('config', 'access', { salt: cur.salt, codes }); toast('ยกเลิกรหัสแล้ว'); }); },
   cashAddId: el => { const e = cashAdd(S.d.parcels[el.dataset.id]); ui.cash.err = e; render({ force: true }); },
   cashRemove: el => { ui.cash.cart = ui.cash.cart.filter(id => id !== el.dataset.id); render({ force: true }); },
   cashClear: () => { ui.cash.cart = []; ui.cash.cash = ''; ui.cash.err = ''; render({ force: true }); },
@@ -3826,6 +3944,31 @@ const ACT = {
   } }); },
 };
 const FORMS = {
+  gate: async fd => {
+    const g = ui.gate; const a = accessCfg(); const code = String(fd.code || '').trim();
+    if (!g.role || !a || !a.codes[g.role]) return 'เลือกแผนกก่อน';
+    if (Date.now() < (g.lockUntil || 0)) return `ใส่รหัสผิดหลายครั้ง รอ ${Math.ceil((g.lockUntil - Date.now()) / 1000)} วินาทีแล้วลองใหม่`;
+    if (!code) return 'ใส่รหัส';
+    const h = await codeHash(a.salt, g.role, code);
+    if (h !== a.codes[g.role].h) { g.fails = (g.fails || 0) + 1; if (g.fails >= 5) { g.fails = 0; g.lockUntil = Date.now() + 30000; } return 'รหัสไม่ถูกต้อง'; }
+    const sc = g.role; ls.set('ssc-session', { role: sc, h, at: new Date().toISOString() }); ui.gate = { role: '' };
+    role = sc === 'driver' ? 'driver' : 'dispatch'; ls.set('ssc-role', role);
+    renderChrome(); if (location.hash !== '#' + SECTIONS[sc].home) location.hash = '#' + SECTIONS[sc].home;
+    toast('เข้าใช้งานเป็น ' + SECTIONS[sc].label);
+  },
+  accessCode: async (fd, form) => {
+    const sc = form.dataset.sec; const code = String(fd.code || '').trim();
+    if (S.demo) return 'ปิดโหมดทดลองก่อน รหัสใช้กับข้อมูลจริง';
+    if (S.backend === 'db' && !S.isOwner) return 'ตั้งรหัสได้เฉพาะบัญชีเจ้าของลิงก์ (เฮีย)';
+    if (!SECTIONS[sc]) return 'ไม่พบแผนกนี้';
+    if (code.length < 4 || code.length > 20 || /\s/.test(code)) return 'รหัสต้องยาว 4–20 ตัว ไม่มีช่องว่าง';
+    const cur = accessCfg() || {}; const salt = cur.salt || [...crypto.getRandomValues(new Uint8Array(16))].map(b => b.toString(16).padStart(2, '0')).join('');
+    const codes = { ...(cur.codes || {}) };
+    for (const k of SECTION_ORDER) if (k !== sc && codes[k] && codes[k].h === await codeHash(salt, k, code)) return `รหัสนี้ซ้ำกับ ${SECTIONS[k].label} ใช้รหัสอื่น`;
+    codes[sc] = { h: await codeHash(salt, sc, code), at: new Date().toISOString(), by: S.uid || null };
+    try { await put('config', 'access', { salt, codes }); } catch { return 'บันทึกไม่สำเร็จ'; }
+    form.reset(); toast(`ตั้งรหัส ${SECTIONS[sc].label} แล้ว${cur.codes && cur.codes[sc] ? ' เครื่องที่ใช้รหัสเดิมต้องใส่ใหม่' : ''}`);
+  },
   cashScan: async () => {
     const raw = ui.cash.code; ui.cash.code = ''; const inp = $('#cash-in'); if (inp) inp.value = '';
     const m = parseCode(raw); ui.cash.err = '';
@@ -3892,6 +4035,7 @@ const FORMS = {
     toast('บันทึกวันที่ถึงสาขาแล้ว');
   },
   settings: async fd => {
+    if (S.backend === 'db' && !S.demo && !S.isOwner && !S.canEdit) return 'บันทึกค่าตั้งค่าได้เฉพาะเจ้าของลิงก์หรือผู้แก้ไข (Editor)';
     const s = settings(); const n = (k, d) => { const v = num(fd[k]); return v === null ? d : v; };
     const o = { serviceIntervalKm: n('serviceIntervalKm', s.serviceIntervalKm), warnKm: n('warnKm', s.warnKm), dueKm: n('dueKm', s.dueKm), partnerSharePct: n('partnerSharePct', s.partnerSharePct), defaultRadiusM: n('defaultRadiusM', s.defaultRadiusM), staleHours: n('staleHours', s.staleHours), fuelStd: {}, minRevenue: {} };
     o.maxPayloadKg = {}; o.legalGrossKg = {}; o.bufferHours = n('bufferHours', s.bufferHours); o.hubDays = n('hubDays', s.hubDays); o.posStaleHours = n('posStaleHours', s.posStaleHours);
@@ -4111,6 +4255,7 @@ async function boot() {
     S.db = db; S.backend = 'db';
     try { S.uid = user ? await user.id() : null; } catch {}
     try { const can = user ? await user.can('data.write') : null; if (can === false) S.readOnly = true; } catch {}
+    try { S.isOwner = user ? !!(await user.isOwner()) : false; S.canEdit = user ? !!(await user.canEdit()) : false; } catch {}
     subscribeAll();
   } else {
     S.backend = 'local';
