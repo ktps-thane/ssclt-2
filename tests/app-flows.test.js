@@ -107,7 +107,9 @@ const ok = (cond, msg) => { if (cond) log('  PASS', msg); else { fails++; log(' 
   await page.locator('label.pick:has-text("เดโปพิษณุโลก") input').check(); await page.waitForTimeout(200);
   const recoN = await page.locator('.pick:has(.reco) .plate').first().textContent().catch(() => '');
   ok(recoN === '70-1002' || recoN === '70-1001', `recommended north truck is a 22-wheeler from the pump queue (${recoN})`);
-  ok(await page.locator('button.pick .ln:has-text("สายใต้")').count() === 0, 'north filter hides south trucks');
+  const bases = (await page.locator('button.pick .ln').allTextContents()).map(x => x.trim());
+  ok(bases.slice(0, 3).every(x => x === 'ฐานเหนือ') && bases.includes('ฐานใต้'), 'north line: north-base trucks first, south-base trucks still listed (' + bases.slice(0, 5).join(',') + ')');
+  ok(await page.locator('button.pick:has(.plate:text-is("70-1007")) .chip:has-text("มาเสริมสายเหนือ")').count() === 1, 'a south-base truck can reinforce the north line');
   ok(await page.locator('button.pick:not([disabled]):has(.plate:text-is("70-1004")) .chip.good:has-text("ว่างหลัง")').count() === 1, 'truck unloading at 08:00 is offered for a 10:00 load (2 h buffer)');
   await page.fill('#dp-lt', '09:00'); await page.waitForTimeout(250);
   ok(await page.locator('button.pick[disabled]:has(.plate:text-is("70-1004")) .chip.crit:has-text("ชนเวลาโหลด")').count() === 1, 'same truck blocked when the load time overlaps');

@@ -560,6 +560,8 @@ const routeOf = id => S.d.routes[id];
 const orderLine = o => o.line || (KIND[o.kind] && KIND[o.kind].line) || null;
 const tripLine = t => t.line || ((vehicleOf(t.vehicleId) || {}).line) || null;
 const lineBadge = l => l && LINES[l] ? `<span class="ln ${l}">${esc(LINES[l].name)}</span>` : '';
+// a truck's home base: it runs every line, the base only decides who is offered first
+const baseBadge = l => l && LINES[l] ? `<span class="ln ${l}">ฐาน${esc(LINES[l].name.replace(/^สาย/, ''))}</span>` : '';
 const checkinSites = () => Object.values(S.d.sites).filter(s => CHECKIN_KINDS.includes(s.kind)).sort((a, b) => (a.line === 'south' ? -1 : 1) - (b.line === 'south' ? -1 : 1) || thSort('name')(a, b));
 const branches = () => Object.values(S.d.sites).filter(s => s.kind === 'branch').sort(thSort('name'));
 function maint(v) {
@@ -735,17 +737,19 @@ function candidates(load, route, line, loadDT) {
   const busy = busyVehicles();
   const wait = {};
   Object.values(S.d.checkins).filter(c => c.status === 'waiting').sort(queueCmp).forEach(c => { if (!wait[c.vehicleId]) wait[c.vehicleId] = c; });
-  const list = Object.values(S.d.vehicles).filter(v => line === 'all' || !v.line || v.line === line).map(v => {
+  const siteLine = w => (S.d.sites[w.siteId] || {}).line || null;
+  const list = Object.values(S.d.vehicles).map(v => {
     const w = wait[v.id] || null; const ev = evaluate(v, load, route);
+    const away = line !== 'all' && (w ? !!(siteLine(w) && siteLine(w) !== line) : !!(v.line && v.line !== line));
     const timing = busy[v.id] ? timeFit(v.id, load, route, loadDT) : null;
     const fits = !!(timing && timing.ok);
     const off = v.status && v.status !== 'ready';
     const unavailable = off || (!!busy[v.id] && !fits);
     const group = unavailable ? 3 : busy[v.id] ? 2 : w ? (w.ready === false ? 1 : 0) : 2;
-    return { v, w, ev, busy: busy[v.id] || null, timing, fits, unavailable, group };
+    return { v, w, ev, busy: busy[v.id] || null, timing, fits, unavailable, group, away };
   });
-  list.sort((a, b) => a.group - b.group || (a.w && b.w ? queueCmp(a.w, b.w) : 0) || thSort('plate')(a.v, b.v));
-  const ok0 = list.filter(x => x.group === 0 && x.ev.overall !== 'crit');
+  list.sort((a, b) => a.group - b.group || (a.away - b.away) || (a.w && b.w ? queueCmp(a.w, b.w) : 0) || thSort('plate')(a.v, b.v));
+  const ok0 = list.filter(x => x.group === 0 && !x.away && x.ev.overall !== 'crit');
   const reco = ok0.find(x => !x.ev.checks.some(c => c.key === 'type' && c.state !== 'good')) || ok0[0];
   return { list, reco: reco ? reco.v.id : null };
 }
@@ -1718,7 +1722,7 @@ PAGES.dispatch = () => {
   <section class="sec">
     <h2>5 · ตรวจสอบก่อนปล่อยรถ</h2>
     <div class="card pad stack">
-      ${chosen ? `<div class="l1">${plate(chosen.v, 'lg')} ${vt(chosen.v.type)} ${own(chosen.v)} ${lineBadge(chosen.v.line)} ${chosen.w ? chip('info', `คิว ${pad(queuePos(chosen.w))} · ${siteName(chosen.w.siteId)}`, 'queue') : chip('', 'ไม่ได้เช็คอิน')}</div>
+      ${chosen ? `<div class="l1">${plate(chosen.v, 'lg')} ${vt(chosen.v.type)} ${own(chosen.v)} ${baseBadge(chosen.v.line)} ${chosen.w ? chip('info', `คิว ${pad(queuePos(chosen.w))} · ${siteName(chosen.w.siteId)}`, 'queue') : chip('', 'ไม่ได้เช็คอิน')}</div>
         <div class="util">${chosen.ev.util.map(u => `<span>${u.label}</span>${meter(u.pct, u.state === 'crit' ? 'crit' : u.state === 'warn' ? 'warn' : '')}<span class="v">${u.pct === null ? 'ไม่มีข้อมูล' : `${fmt(u.val, 1)} / ${fmt(u.cap)} ${u.unit} (${fmt(u.pct * 100)}%)`}</span>`).join('')}</div>
         <div class="checks">${chosen.ev.checks.map(c => `<div class="check ${c.state}"><span class="ic">${icon(c.state === 'good' ? 'check' : c.state === 'crit' ? 'x' : c.state === 'warn' ? 'alert' : 'info')}</span><span class="t"><b>${esc(c.title)}</b><span>${esc(c.text)}</span></span><span class="v">${esc(c.val || '')}</span></div>`).join('')}</div>
         ${ev.over ? `<label class="rowflex note crit"><input type="checkbox" data-bind="dp.confirmOver" ${p.confirmOver ? 'checked' : ''}> ยืนยันว่าตรวจสอบแล้ว ปล่อยรถแม้เกินความจุที่บันทึกไว้</label>` : ''}
@@ -1754,7 +1758,7 @@ function candRow(x, reco) {
   return `<button type="button" class="pick" data-act="dpVeh" data-id="${esc(v.id)}" aria-pressed="${sel}" ${unavailable ? 'disabled' : ''}>
     <span class="radio" aria-hidden="true"></span>
     <span class="main">
-      <span class="l1">${plate(v)} ${vt(v.type)} ${own(v)} ${lineBadge(v.line)} ${reco === v.id ? '<span class="reco">แนะนำ</span>' : ''}</span>
+      <span class="l1">${plate(v)} ${vt(v.type)} ${own(v)} ${baseBadge(v.line)} ${reco === v.id ? '<span class="reco">แนะนำ</span>' : ''}${x.away && !w ? chip('', `มาเสริม${esc(LINES[ui.dp.line] ? LINES[ui.dp.line].name : '')}`, 'route') : ''}</span>
       <span class="l1">${w ? chip(w.ready === false ? 'serious' : 'info', `คิว ${pad(queuePos(w))} · ${siteName(w.siteId)} · ${w.day === dayKey() ? thTime(w.at) : thDT(w.at)}${w.ready === false ? ' · ไม่พร้อม' : ''}`, 'queue') : ''}${w ? queueChip(w) : ''}${timingChip(x)}${v.gps && Date.now() - new Date(v.gps.at) < 24 * 3600000 ? chip('', `GPS ${placeText(v.gps)} · ${hhmm(v.gps.at)}`, 'pin') : ''}${v.status === 'repair' ? chip('serious', 'ซ่อม', 'wrench') : v.status === 'off' ? chip('', 'งดใช้งาน') : ''}${!w && !unavailable && !busy ? '<span class="small muted">ไม่ได้เช็คอิน</span>' : ''}</span>
       ${!unavailable ? `<span class="l1">${crit.map(c => chip('crit', c.text)).join('')}${warn.map(c => chip('warn', c.text)).join('')}${!crit.length && !warn.length && anySel ? chip('good', 'ผ่านทุกเงื่อนไข') : ''}</span>` : ''}
     </span>
@@ -1799,7 +1803,7 @@ async function createTrip() {
   const seq = Object.values(d.trips).filter(t => t.date === p.date).length + 1;
   const [yy, mm, dd] = p.date.split('-');
   const id = uid(); const now = new Date().toISOString();
-  const line = p.line !== 'all' ? p.line : (v.line || (load.orders[0] && orderLine(load.orders[0])) || (load.parcels.length ? 'south' : null));
+  const line = p.line !== 'all' ? p.line : ((load.orders[0] && orderLine(load.orders[0])) || (load.parcels.length ? 'south' : null) || v.line || null);
   const trip = {
     no: `T${yy.slice(2)}${mm}${dd}-${pad(seq)}`, date: p.date, loadAt: loadTime ? `${p.date}T${loadTime}` : null, line, vehicleId: v.id, driverId: p.driverId, trailerPlate: p.trailerPlate.trim() || (w && w.trailerPlate) || v.trailerPlate || null,
     checkinId: w ? w.id : null, routeId: route ? route.id : null, status: 'planned', jobs, standardKm: route ? num(route.standardKm) : null,
@@ -2428,7 +2432,7 @@ PAGES.maint = () => {
   <div class="note small">รอบเข้าศูนย์ทุก <b>${fmt(s.serviceIntervalKm)} กม.</b> · Next Service KM = Last Service KM + ${fmt(s.serviceIntervalKm)} · Remaining KM = Next Service KM − Current KM · เกณฑ์เตือน (ร่าง): ใกล้ถึง ≤ ${fmt(s.warnKm)} กม., ถึงรอบ ≤ ${fmt(s.dueKm)} กม.</div>
   ${seg('maintFilter', f, [['all', 'ทั้งหมด', rows.length], ['due', 'ต้องดูแล', (counts.crit || 0) + (counts.serious || 0) + (counts.warn || 0)], ['crit', 'เกินรอบ', counts.crit || 0], ['unknown', 'ไม่มีเลขไมล์', counts.unknown || 0]])}
   <div class="list">${list.length ? list.map(({ v, m }) => `<div class="row"><div class="main">
-    <div class="l1">${plate(v)} ${vt(v.type)} ${own(v)} ${lineBadge(v.line)} ${chip(m.state === 'unknown' ? '' : m.state, m.label, 'wrench')}</div>
+    <div class="l1">${plate(v)} ${vt(v.type)} ${own(v)} ${baseBadge(v.line)} ${chip(m.state === 'unknown' ? '' : m.state, m.label, 'wrench')}</div>
     ${m.used !== null ? `<div class="util" style="grid-template-columns:minmax(60px,1fr) auto">${meter(Math.min(1, m.used), m.state === 'good' ? '' : m.state)}<span class="v small">${fmt(Math.max(0, m.used) * 100)}% ของรอบ</span></div>` : ''}
     <div class="small meta num">Current ${fmt(num(v.currentKm))} · Last Service ${fmt(num(v.lastServiceKm))}${v.lastServiceDate ? ` (${thDate(v.lastServiceDate)})` : ''} · Next ${fmt(m.next)} · Remaining ${fmt(m.remaining)}</div>
     <div class="actions"><button class="btn sm" data-act="service" data-id="${esc(v.id)}" ${dis()}>${icon('wrench')}บันทึกเข้าศูนย์</button><button class="btn sm ghost" data-act="edit" data-col="vehicles" data-id="${esc(v.id)}" ${dis()}>แก้ไขเลขไมล์</button></div>
@@ -2441,7 +2445,7 @@ const FIELDS = {
   vehicles: [
     { k: 'plate', label: 'ทะเบียนหลัก (หัวรถ 18/22 ล้อ หรือรถ 10 ล้อ)', req: true },
     { k: 'type', label: 'ประเภทรถ', type: 'select', req: true, opts: VTYPES.map(t => [t, t + ' ล้อ']) },
-    { k: 'line', label: 'สายประจำ', type: 'select', opts: LINE_OPTS },
+    { k: 'line', label: 'ฐานหลัก (สายที่วิ่งเป็นหลัก)', type: 'select', opts: LINE_OPTS, hint: 'รถวิ่งได้ทุกสาย ตอนจัดรถจะเรียงรถฐานเดียวกันขึ้นก่อน' },
     { k: 'trailerPlate', label: 'ทะเบียนหางประจำ', hint: 'เฉพาะ 18/22 ล้อ' },
     { k: 'trailerType', label: 'ประเภทหาง', hint: 'เฉพาะ 18/22 ล้อ เช่น ตู้ทึบ พื้นเรียบ' },
     { k: 'ownership', label: 'เจ้าของรถ', type: 'select', opts: [['SSC', 'รถบริษัท'], ['Partner', 'รถ Partner / สาขา']] },
@@ -2546,7 +2550,7 @@ PAGES.master = () => {
 };
 function masterRow(tab, x) {
   const btns = `<div class="actions"><button class="btn sm" data-act="edit" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>แก้ไข</button><button class="btn sm danger" data-act="delete" data-col="${tab}" data-id="${esc(x.id)}" ${dis()}>ลบ</button></div>`;
-  if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${lineBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">${[`รับ ${fmt(num(payloadCap(x)))} กก.`, num(x.tareKg) ? `รถเปล่า ${fmt(num(x.tareKg))} กก.` : '', num(x.capPallets) ? `${fmt(num(x.capPallets))} พาเลท` : '', num(x.capVolumeCbm) ? `${fmt(num(x.capVolumeCbm))} คิว` : '', x.gpsProvider ? `GPS ${esc(x.gpsProvider)}` : '', num(x.currentKm) !== null ? `ไมล์ ${fmt(num(x.currentKm))}` : '', esc(m.label)].filter(Boolean).join(' · ')}</div>${x.gps ? `<div class="small meta">${icon('pin')} ${esc(posText(x.gps))} · ${esc(agoText(x.gps.at))} · ${esc(posSrc(x.gps))}</div>` : ''}${x.driverId && S.d.drivers[x.driverId] ? `<div class="small meta">${icon('user')} ${esc(S.d.drivers[x.driverId].name)}${S.d.drivers[x.driverId].phone ? ' · ' + esc(S.d.drivers[x.driverId].phone) : ''}</div>` : `<div class="small meta">${icon('user')} ยังไม่มีคนขับประจำ</div>`}${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${(() => { const dup = x.trailerPlate ? Object.values(S.d.vehicles).filter(o => o.id !== x.id && o.trailerPlate === x.trailerPlate).map(o => o.plate) : []; return dup.length ? chip('warn', `หาง ${x.trailerPlate} ซ้ำกับรถ ${dup.join(', ')}`) : ''; })()}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
+  if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${baseBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">${[`รับ ${fmt(num(payloadCap(x)))} กก.`, num(x.tareKg) ? `รถเปล่า ${fmt(num(x.tareKg))} กก.` : '', num(x.capPallets) ? `${fmt(num(x.capPallets))} พาเลท` : '', num(x.capVolumeCbm) ? `${fmt(num(x.capVolumeCbm))} คิว` : '', x.gpsProvider ? `GPS ${esc(x.gpsProvider)}` : '', num(x.currentKm) !== null ? `ไมล์ ${fmt(num(x.currentKm))}` : '', esc(m.label)].filter(Boolean).join(' · ')}</div>${x.gps ? `<div class="small meta">${icon('pin')} ${esc(posText(x.gps))} · ${esc(agoText(x.gps.at))} · ${esc(posSrc(x.gps))}</div>` : ''}${x.driverId && S.d.drivers[x.driverId] ? `<div class="small meta">${icon('user')} ${esc(S.d.drivers[x.driverId].name)}${S.d.drivers[x.driverId].phone ? ' · ' + esc(S.d.drivers[x.driverId].phone) : ''}</div>` : `<div class="small meta">${icon('user')} ยังไม่มีคนขับประจำ</div>`}${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${(() => { const dup = x.trailerPlate ? Object.values(S.d.vehicles).filter(o => o.id !== x.id && o.trailerPlate === x.trailerPlate).map(o => o.plate) : []; return dup.length ? chip('warn', `หาง ${x.trailerPlate} ซ้ำกับรถ ${dup.join(', ')}`) : ''; })()}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
   if (tab === 'drivers') return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> ${x.nickname ? `<span class="meta">(${esc(x.nickname)})</span>` : ''} ${x.active === false ? chip('', 'พัก / ออกแล้ว') : ''}</div><div class="small meta">${x.phone ? esc(x.phone) : 'ไม่มีเบอร์โทร'}${(() => { const vs = Object.values(S.d.vehicles).filter(v => v.driverId === x.id).map(v => v.plate); return vs.length ? ` · ขับ ${esc(vs.join(', '))}` : ''; })()}</div>${btns}</div></div>`;
   if (tab === 'sites') { const pinned = x.lat !== null && x.lat !== undefined; const ck = CHECKIN_KINDS.includes(x.kind); return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> <span class="small muted">${esc(SITE_KIND[x.kind] || '')}</span> ${lineBadge(x.line)} ${ck ? (pinned ? chip('good', 'ปักหมุดแล้ว', 'pin') : chip('warn', 'ยังไม่ปักหมุด', 'pin')) : ''} ${x.operator ? chip(x.operator === 'Partner' ? '' : 'info', x.operator === 'SSC' ? 'กระจายโดยรถบริษัท' : x.operator === 'Partner' ? 'กระจายโดย Partner' : 'รถบริษัท + Partner') : ''}</div>${x.aliases ? `<div class="small meta">ชื่อเรียกหน้างาน: ${esc(x.aliases)}</div>` : ''}${x.backhaulCutoff ? `<div class="small meta">ตัดรอบรถมีงาน Backhaul ${esc(x.backhaulCutoff)} น.</div>` : ''}${x.provinces ? `<div class="small meta">ดูแลจังหวัด: ${esc(x.provinces)}</div>` : ''}${ck ? `<div class="small meta num">${pinned ? `${(+x.lat).toFixed(5)}, ${(+x.lng).toFixed(5)} · รัศมี ${fmt(num(x.radiusM) || settings().defaultRadiusM)} ม. · ${locLink(x)}` : 'วางพิกัดจาก Google Maps ในหน้าแก้ไข'}</div>` : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
   return `<div class="row"><div class="main"><div class="l1">${kindB(x.kind)} <b>${esc(x.name)}</b> ${lineBadge(x.line)}</div><div class="small meta num">${esc(x.origin || '–')} → ${esc(x.destination || '–')} · Standard ${num(x.standardKm) ? fmt(num(x.standardKm)) + ' กม.' : 'ยังไม่มี'} · เบี้ยเลี้ยง ${money(num(x.allowance))} · ทางด่วน ${money(num(x.toll))}</div>${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`;
@@ -2839,6 +2843,7 @@ PAGES.pending = () => {
       <li><b>เวลาเข้าสาขา:</b> ทุกสาขาภาคใต้ต้องถึงก่อนประมาณ 07:00 น. (ค่าเริ่มต้นคือเช้าวันถัดจากวันออกรถ แก้วันได้ในทริป)</li>
       <li><b>รถกำลังวิ่ง:</b> ต้องเห็นว่าวิ่งจากไหนไปไหน ตอนนี้ถึงอำเภอ/จังหวัดไหนแล้ว</li>
       <li><b>ส่งงาน:</b> ทุกจุดคนขับกด "ถึงแล้ว" และ "ลงของเสร็จ" ระบบจับตำแหน่งตอนกด ลงของเสร็จต้องถ่ายรูปบิล รูปสินค้า รูปรถว่าง และลายเซ็นผู้รับ · ที่ Dairy Plus ใช้เวลาลงของเสร็จจริง + 2 ชม. (ลงเร็วได้โหลดเร็ว)</li>
+      <li><b>ฐานหลักของรถ:</b> รถทุกคันวิ่งได้ทุกสาย แต่มีฐานหลักเหนือหรือใต้ (งานหลักอยู่ภาคใต้) ตอนจัดรถระบบเรียงรถฐานเดียวกันก่อน รถต่างฐานขึ้นเป็น "มาเสริม"</li>
       <li><b>GPS ติดรถ:</b> รถบรรทุกใช้เทเลเทค รถเล็กใช้ Forth Tracking · การต่อ API พักไว้ก่อน ใช้คนขับกดส่งจากมือถือ (คัดลอกหน้า "ตำแหน่งปัจจุบัน" ของเทเลเทคมาวางได้ถ้าต้องการ)</li>
     </ol></div></section>
   <section class="sec"><h2>เรื่องที่ยังต้องถาม</h2>
@@ -2846,8 +2851,8 @@ PAGES.pending = () => {
       <li>งาน SC Standard Can รับกระป๋องที่ไหน (ต้นทางก่อนไปลำปาง)</li>
       <li>แจ้งทะเบียนโรงงานผ่านช่องทางไหน (กลุ่ม LINE / อีเมล / โทร) จะได้ทำข้อความให้ตรงรูปแบบ</li>
       <li>น้ำหนักรถเปล่า (หัว + หาง) ของแต่ละคัน ส่งมาพร้อมไฟล์ทะเบียนได้ไหม</li>
-      <li>ไฟล์รถ 24/9/69: หาง 62-8056 อยู่กับรถ 63-5501 และ 63-6979 · หาง 62-8162 อยู่กับรถ 63-5504, 68-4616, 68-4617 · คนขับ เบียร์ พิมพระ อยู่ทั้งรถ 62-6128 และ 62-6130 (คนละเบอร์) คันไหนถูก</li>
-      <li>รถแต่ละคันวิ่งสายเหนือหรือสายใต้ หรือสลับได้ทุกคัน (ตอนนี้ตั้งเป็นไม่ระบุสาย)</li>
+      <li>ไฟล์รถ 24/9/69: หาง 62-8056 อยู่กับรถ 63-5501 และ 63-6979 · หาง 62-8162 อยู่กับรถ 63-5504, 68-4616, 68-4617 คันไหนถูก</li>
+      <li>รถคันไหนเป็นฐานเหนือ คันไหนฐานใต้ (ตั้งได้ที่ ข้อมูลหลัก → แก้ไขรถ → ฐานหลัก)</li>
     </ol></div></section>
   <section class="sec"><h2>ระบบอื่นที่จะทำต่อ</h2>
     <div class="card pad doc"><ul>
@@ -2940,7 +2945,7 @@ const ACT = {
   scanCancelPending: () => { ui.scan.pending = null; render({ force: true }); },
   scanDeliver: async () => { const p = S.d.parcels[ui.scan.pending]; if (!p) return; if (!ui.scan.podName.trim()) { toast('กรอกชื่อคนรับของ'); return; } try { await deliverParcel(p, ui.scan.podName.trim(), !!ui.scan.codOk); } catch { return; } scanLog('good', p.no, `ส่งสำเร็จ · ${ui.scan.podName.trim()}${p.payer === 'cod' ? (ui.scan.codOk ? ' · เก็บค่าส่งแล้ว' : ' · ยังไม่ได้เก็บค่าส่ง') : ''}`); ui.scan.pending = null; render({ force: true }); },
   scanForTrip: el => { ui.scan.mode = 'loaded'; ui.scan.tripId = el.dataset.id; ui.scan.pending = null; location.hash = '#scan'; },
-  dpLine: el => { const L = el.dataset.v; ui.dp.line = L; ui.dp.routeId = ''; ui.dp.err = ''; if (L !== 'all') { Object.keys(ui.dp.sel).forEach(id => { const o = S.d.orders[id]; if (!o || orderLine(o) !== L) delete ui.dp.sel[id]; }); if (L === 'north') ui.dp.psel = {}; const v = S.d.vehicles[ui.dp.vehicleId]; if (v && v.line && v.line !== L) ui.dp.vehicleId = ''; } render({ force: true }); },
+  dpLine: el => { const L = el.dataset.v; ui.dp.line = L; ui.dp.routeId = ''; ui.dp.err = ''; if (L !== 'all') { Object.keys(ui.dp.sel).forEach(id => { const o = S.d.orders[id]; if (!o || orderLine(o) !== L) delete ui.dp.sel[id]; }); if (L === 'north') ui.dp.psel = {}; } render({ force: true }); },
   dpSel: el => { if (el.checked) ui.dp.sel[el.dataset.id] = true; else delete ui.dp.sel[el.dataset.id]; ui.dp.err = ''; render({ force: true }); },
   dpPsel: el => { if (el.checked) ui.dp.psel[el.dataset.id] = true; else delete ui.dp.psel[el.dataset.id]; ui.dp.err = ''; render({ force: true }); },
   dpVeh: el => { const id = el.dataset.id; if (ui.dp.vehicleId === id) return; ui.dp.vehicleId = id; const w = Object.values(S.d.checkins).filter(c => c.status === 'waiting' && c.vehicleId === id).sort(queueCmp)[0]; ui.dp.driverId = (w && w.driverId) || (S.d.vehicles[id] && S.d.drivers[S.d.vehicles[id].driverId] ? S.d.vehicles[id].driverId : ''); ui.dp.trailerPlate = (w && w.trailerPlate) || ''; ui.dp.confirmOver = false; ui.dp.err = ''; render({ force: true }); },
