@@ -56,7 +56,9 @@ const withCodes = { ...base, 'config/access': { salt, codes: { driver: { h: sha(
   const tiles = (await p.locator('.tile b').allTextContents()).join(',');
   ok(!/ค่าตั้งค่า|สิทธิ์และรหัส|จัดรถ|Maintenance/.test(tiles) && await p.locator('button[data-act="logout"]').count() === 1, 'more page has no other department tiles, only log out: ' + tiles);
   await p.screenshot({ path: OUT + '/access-checker.png' });
+  await p.waitForTimeout(2500); // let the browser commit localStorage before an immediate reload
   await p.reload(); await ready(p);
+  await p.waitForSelector('.modechip.secchip', { timeout: 6000 }).catch(() => {});
   ok((await title(p)) !== 'เข้าใช้งาน' && await p.locator('.modechip.secchip:has-text("เช็คเกอร์")').count() === 1, 'device remembers the department after reload');
   await p.locator('.modechip.secchip').click(); await p.waitForTimeout(200);
   await p.locator('#sheet button[data-act="logout"]').click(); await p.waitForTimeout(400);

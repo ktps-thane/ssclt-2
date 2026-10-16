@@ -794,8 +794,20 @@ function candidates(load, route, line, loadDT) {
 /* ================= V3 rules: fuel per route, south corridor, Partner hubs, contract cargo, deadlines ================= */
 // fuel given for a leg = Standard KM ÷ standard km/litre of the truck type (settings.fuelStd)
 const fuelGive = (km, type) => { const k = num(km), r = num(settings().fuelStd[type]); return k && r ? Math.round(k / r) : null; };
-const fuelText = km => num(km) ? VTYPES.map(t => `${t} ล้อ ${fmt(fuelGive(km, t))} ล.`).join(' · ') : '';
-const tripFuelPlan = t => { const v = vehicleOf(t.vehicleId); return fuelGive(t.standardKm, v && v.type); };
+// เฮีย sets the litres for each route; until then it is Standard KM ÷ standard km/litre
+const routeFuelSet = (r, type) => num(r && (type === '10' ? r.fuel10 : r.fuelLiters));
+const routeFuel = (r, type) => { const f = routeFuelSet(r, type); return f !== null ? f : fuelGive(r && r.standardKm, type); };
+const hasFuelSet = r => routeFuelSet(r, '18') !== null || routeFuelSet(r, '10') !== null;
+const routeFuelText = r => VTYPES.map(t => { const f = routeFuel(r, t); return f === null ? null : `${t} ล้อ ${fmt(f)} ล.`; }).filter(Boolean).join(' · ');
+function tripFuelInfo(t) {
+  const v = vehicleOf(t.vehicleId); const ty = v && v.type;
+  const legs = uniq((t.jobs || []).map(j => j.routeId)).map(routeOf).filter(Boolean);
+  let liters = 0, n = 0, set = 0;
+  legs.forEach(r => { const f = routeFuel(r, ty); if (f !== null) { liters += f; n++; if (routeFuelSet(r, ty) !== null) set++; } });
+  if (n) return { liters, src: set === n ? 'set' : set ? 'mixed' : 'km', legs: n };
+  return { liters: fuelGive(t.standardKm, ty), src: 'km', legs: 0 };
+}
+const tripFuelPlan = t => tripFuelInfo(t).liters;
 const feedDone = t => !!(t.feed && t.feed.at);
 // south hubs in driving order from คลังสาย 3: ชุมพร → สุราษฎร์ → ทุ่งสง → นครศรีฯ, then the Partner provinces
 const CORRIDOR = [['ชุมพร', 0], ['ระนอง', 0.5], ['สุราษฎร์', 1], ['กระบี่', 1.5], ['ทุ่งสง', 2], ['นครศรี', 3], ['ภูเก็ต', 4], ['พังงา', 4.2], ['ตรัง', 5], ['พัทลุง', 5.5], ['สงขลา', 6], ['สตูล', 6.5], ['ยะลา', 7], ['ปัตตานี', 7.2], ['นราธิวาส', 7.4]];
@@ -2300,7 +2312,7 @@ PAGES.dispatch = () => {
     <h2>2 · เส้นทาง (ขาแรก) และวันออกรถ</h2>
     <div class="grid2">
       <div class="field"><label for="dp-route">เส้นทาง (Route)</label><select id="dp-route" data-bind="dp.routeId" data-rerender="all"><option value="">— ยังไม่ระบุ —</option>${routes.map(r => `<option value="${esc(r.id)}" ${p.routeId === r.id ? 'selected' : ''}>${esc(r.name)}${num(r.standardKm) ? ` · ${fmt(num(r.standardKm))} กม.` : ''}</option>`).join('')}</select>
-        <span class="hint">${route ? (num(route.standardKm) ? `Standard KM ขานี้ ${fmt(num(route.standardKm))} กม. · น้ำมันที่ให้ ${chosen ? `${fmt(fuelGive(route.standardKm, chosen.v.type))} ลิตร (รถ ${esc(chosen.v.type)} ล้อ)` : esc(fuelText(route.standardKm))} · ขากลับ/วิ่งเปล่าเพิ่มในทริปได้` : 'เส้นทางนี้ยังไม่มี Standard KM (รอ Route Master)') : 'ถ้ายังไม่มีเส้นทางตรง เลือกภายหลังได้ในทริป'}</span></div>
+        <span class="hint">${route ? [num(route.standardKm) ? `Standard KM ขานี้ ${fmt(num(route.standardKm))} กม.` : 'ยังไม่มี Standard KM', (() => { const ty = chosen && chosen.v.type; const f = ty ? routeFuel(route, ty) : null; const txt = ty ? (f === null ? '' : `${fmt(f)} ลิตร (รถ ${esc(ty)} ล้อ${routeFuelSet(route, ty) !== null ? ' · เฮียกำหนด' : ''})`) : esc(routeFuelText(route)); return txt ? 'น้ำมันที่ให้ ' + txt : 'ยังไม่ได้กำหนดน้ำมันของเส้นทางนี้'; })(), 'ขากลับ/วิ่งเปล่าเพิ่มในทริปได้'].join(' · ') : 'ถ้ายังไม่มีเส้นทางตรง เลือกภายหลังได้ในทริป'}</span></div>
       <div class="field"><label for="dp-date">วันออกรถ</label><input id="dp-date" type="date" data-bind="dp.date" data-rerender="all" value="${esc(p.date)}"></div>
       <div class="field"><label for="dp-lt">เวลาเข้าโหลด</label><input id="dp-lt" type="time" data-bind="dp.loadTime" data-rerender="all" value="${esc(loadTime)}"><span class="hint">${atTimeMatch(loadOrigin(load, route)) ? `โหลดที่ ${esc(settings().timeMatchAt)}: ใช้ดูว่ารถที่ลงของขากลับอยู่ทันไหม (เผื่อ ${fmt(settings().bufferHours)} ชม. หลังลงของ)` : `จับคู่เวลาลงของ → โหลด ใช้เฉพาะงานที่ ${esc(settings().timeMatchAt)}`}</span></div>
       ${(() => { const so = load.parcels.length > 0 || load.orders.some(o => orderLine(o) === 'south') || p.line === 'south' || (route && route.line === 'south'); if (!so) return ''; const ad = p.arriveDate || addDays(p.date, 1); return `<div class="field"><label for="dp-arr">ต้องถึงสาขาภาคใต้ก่อน ${esc(settings().southArriveBy)} น. วันที่</label><input id="dp-arr" type="date" data-bind="dp.arriveDate" data-rerender="all" value="${esc(ad)}"><span class="hint">ค่าเริ่มต้น = วันถัดจากวันออกรถ ใช้กับทุกสาขาในทริปนี้</span></div>`; })()}
@@ -3163,11 +3175,11 @@ PAGES.trip = id => {
 };
 
 function feedCard(t) {
-  const v = vehicleOf(t.vehicleId); const plan = tripFuelPlan(t); const f = t.feed; const rate = v ? settings().fuelStd[v.type] : null;
+  const v = vehicleOf(t.vehicleId); const fi = tripFuelInfo(t); const plan = fi.liters; const f = t.feed; const rate = v ? settings().fuelStd[v.type] : null;
   return `<section class="card pad stack">
     <div class="sec-h"><h2>น้ำมัน / Feed Card</h2>${feedDone(t) ? chip('good', 'คีย์เข้า Feed Card แล้ว', 'check') : chip(t.status === 'running' ? 'serious' : 'warn', 'ยังไม่ได้คีย์เข้า Feed Card', 'fuel')}</div>
     <div class="kv">
-      <div><span>น้ำมันที่ให้ตาม Standard KM</span><b>${plan === null ? '–' : fmt(plan) + ' ลิตร'}</b><em>${num(t.standardKm) ? `${fmt(num(t.standardKm))} กม. ÷ ${fmt(rate, 1)} กม./ลิตร (รถ ${esc(v ? v.type : '-')} ล้อ)` : 'ยังไม่มี Standard KM ของทริป'}</em></div>
+      <div><span>น้ำมันที่ให้ทริปนี้</span><b>${plan === null ? '–' : fmt(plan) + ' ลิตร'}</b><em>${fi.src === 'set' ? `ตามที่เฮียกำหนดต่อเส้นทาง (${fi.legs} ขา · รถ ${esc(v ? v.type : '-')} ล้อ)` : fi.src === 'mixed' ? `รวม ${fi.legs} ขา บางขายังคิดจาก Standard KM` : num(t.standardKm) ? `${fmt(num(t.standardKm))} กม. ÷ ${fmt(rate, 1)} กม./ลิตร (รถ ${esc(v ? v.type : '-')} ล้อ) · เส้นทางยังไม่กำหนดลิตร` : 'เส้นทางยังไม่กำหนดลิตร และยังไม่มี Standard KM'}</em></div>
       ${f ? `<div><span>คีย์เข้า Feed Card</span><b>${fmt(num(f.liters))} ลิตร</b><em>${f.card ? 'Card ' + esc(f.card) + ' · ' : ''}${thDT(f.at)}${f.note ? ' · ' + esc(f.note) : ''}</em></div>` : `<div><span>คีย์เข้า Feed Card</span><b>ยังไม่คีย์</b><em>${t.status === 'planned' ? 'คีย์ก่อนรถออก' : 'รถออกแล้ว คีย์ให้เรียบร้อย'}</em></div>`}
     </div>
     ${f && plan !== null && num(f.liters) !== null && Math.abs(num(f.liters) - plan) > Math.max(10, plan * 0.1) ? `<div class="note warn small">คีย์ ${fmt(num(f.liters))} ลิตร ต่างจากที่ควรให้ตาม Standard KM ${fmt(plan)} ลิตร</div>` : ''}
@@ -3178,7 +3190,7 @@ function feedCard(t) {
 function openFeed(t) {
   const v = vehicleOf(t.vehicleId); const plan = tripFuelPlan(t); const f = t.feed || {};
   openSheet({ title: 'คีย์น้ำมันเข้า Feed Card · ' + t.no, submit: 'บันทึก', body: `<div class="grid2">
-      ${fieldHtml({ k: 'liters', label: 'ลิตรที่คีย์ในระบบ Feed Card', type: 'number', req: true, hint: plan !== null ? `ตาม Standard KM ควรให้ ${fmt(plan)} ลิตร` : 'ทริปนี้ยังไม่มี Standard KM' }, f.liters ?? plan ?? '')}
+      ${fieldHtml({ k: 'liters', label: 'ลิตรที่คีย์ในระบบ Feed Card', type: 'number', req: true, hint: plan !== null ? `ตามเส้นทาง ควรให้ ${fmt(plan)} ลิตร` : 'เส้นทางยังไม่กำหนดลิตร และยังไม่มี Standard KM' }, f.liters ?? plan ?? '')}
       ${fieldHtml({ k: 'card', label: 'เลข Feed Card' }, f.card || (v && v.feedCard) || '')}
       ${fieldHtml({ k: 'note', label: 'หมายเหตุ' }, f.note || '')}</div>`,
     onSubmit: async fd => {
@@ -3193,7 +3205,7 @@ function feedSection(all) {
   const pend = all.filter(t => (t.status === 'planned' || t.status === 'running') && !feedDone(t)).sort((a, b) => String(a.date).localeCompare(String(b.date)));
   if (!pend.length) return '';
   return `<section class="sec"><div class="sec-h"><h2>Feed Card: ยังไม่ได้คีย์น้ำมัน</h2><span class="sub">${pend.length} ทริป</span></div>
-    <div class="list">${pend.map(t => { const v = vehicleOf(t.vehicleId); const pl = tripFuelPlan(t); return `<div class="row" style="align-items:center"><div class="main"><div class="l1">${plate(v)} <b class="mono">${esc(t.no)}</b> ${statusChip(TRIP_STATUS, t.status)}</div><div class="small meta">ออก ${thDate(t.date)} · ควรให้ ${pl === null ? '– (ไม่มี Standard KM)' : fmt(pl) + ' ลิตร'}</div></div><button class="btn sm primary" data-act="feedKey" data-id="${esc(t.id)}" ${dis()}>${icon('fuel')}คีย์แล้ว</button></div>`; }).join('')}</div></section>`;
+    <div class="list">${pend.map(t => { const v = vehicleOf(t.vehicleId); const pl = tripFuelPlan(t); return `<div class="row" style="align-items:center"><div class="main"><div class="l1">${plate(v)} <b class="mono">${esc(t.no)}</b> ${statusChip(TRIP_STATUS, t.status)}</div><div class="small meta">ออก ${thDate(t.date)} · ควรให้ ${pl === null ? '– (เส้นทางยังไม่กำหนดลิตร)' : fmt(pl) + ' ลิตร'}</div></div><button class="btn sm primary" data-act="feedKey" data-id="${esc(t.id)}" ${dis()}>${icon('fuel')}คีย์แล้ว</button></div>`; }).join('')}</div></section>`;
 }
 
 /* ---------- maintenance ---------- */
@@ -3267,7 +3279,9 @@ const FIELDS = {
     { k: 'line', label: 'สาย', type: 'select', opts: LINE_OPTS },
     { k: 'origin', label: 'ต้นทาง' },
     { k: 'destination', label: 'ปลายทาง' },
-    { k: 'standardKm', label: 'Standard KM ของขานี้', type: 'number', hint: 'น้ำมันที่ให้ = Standard KM ÷ อัตรามาตรฐาน (ตั้งที่ ค่าตั้งค่า)' },
+    { k: 'standardKm', label: 'Standard KM ของขานี้', type: 'number' },
+    { k: 'fuelLiters', label: 'น้ำมันที่ให้ รถ 18/22 ล้อ (ลิตร)', type: 'number', hint: 'เฮียกำหนดต่อเส้นทาง · เว้นว่าง = Standard KM ÷ อัตรามาตรฐาน' },
+    { k: 'fuel10', label: 'น้ำมันที่ให้ รถ 10 ล้อ (ลิตร)', type: 'number', hint: 'เว้นว่าง = Standard KM ÷ 4.8' },
     { k: 'allowance', label: 'เบี้ยเลี้ยงมาตรฐาน (บาท)', type: 'number' },
     { k: 'toll', label: 'ค่าทางด่วนมาตรฐาน (บาท)', type: 'number' },
     { k: 'note', label: 'หมายเหตุ', type: 'textarea' },
@@ -3335,7 +3349,7 @@ function masterRow(tab, x) {
   if (tab === 'vehicles') { const m = maint(x); return `<div class="row"><div class="main"><div class="l1">${plate(x)} ${vt(x.type)} ${own(x)} ${baseBadge(x.line)} ${trl(x)} ${x.status && x.status !== 'ready' ? chip('serious', x.status === 'repair' ? 'ซ่อม' : 'งดใช้งาน') : ''}</div><div class="small meta num">${[`รับ ${fmt(num(payloadCap(x)))} กก.`, num(x.tareKg) ? `รถเปล่า ${fmt(num(x.tareKg))} กก.` : '', num(x.capPallets) ? `${fmt(num(x.capPallets))} พาเลท` : '', num(x.capVolumeCbm) ? `${fmt(num(x.capVolumeCbm))} คิว` : '', x.gpsProvider ? `GPS ${esc(x.gpsProvider)}` : '', num(x.currentKm) !== null ? `ไมล์ ${fmt(num(x.currentKm))}` : '', esc(m.label)].filter(Boolean).join(' · ')}</div>${x.gps ? `<div class="small meta">${icon('pin')} ${esc(posText(x.gps))} · ${esc(agoText(x.gps.at))} · ${esc(posSrc(x.gps))}</div>` : ''}${x.driverId && S.d.drivers[x.driverId] ? `<div class="small meta">${icon('user')} ${esc(S.d.drivers[x.driverId].name)}${S.d.drivers[x.driverId].phone ? ' · ' + esc(S.d.drivers[x.driverId].phone) : ''}</div>` : `<div class="small meta">${icon('user')} ยังไม่มีคนขับประจำ</div>`}${x.type !== '10' && !x.trailerPlate ? chip('warn', 'ยังไม่มีทะเบียนหาง') : ''}${(x.trailerLog || []).length ? (() => { const g = x.trailerLog[x.trailerLog.length - 1]; return `<div class="small meta">${icon('trailer')} เปลี่ยนหางประจำ ${esc(g.from || '-')} → ${esc(g.to || '-')} · ${thDT(g.at)}</div>`; })() : ''}${(() => { const dup = x.trailerPlate ? Object.values(S.d.vehicles).filter(o => o.id !== x.id && o.trailerPlate === x.trailerPlate).map(o => o.plate) : []; return dup.length ? chip('warn', `หาง ${x.trailerPlate} ซ้ำกับรถ ${dup.join(', ')}`) : ''; })()}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
   if (tab === 'drivers') return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> ${x.nickname ? `<span class="meta">(${esc(x.nickname)})</span>` : ''} ${x.active === false ? chip('', 'พัก / ออกแล้ว') : ''}</div><div class="small meta">${x.phone ? esc(x.phone) : 'ไม่มีเบอร์โทร'}${(() => { const vs = Object.values(S.d.vehicles).filter(v => v.driverId === x.id).map(v => v.plate); return vs.length ? ` · ขับ ${esc(vs.join(', '))}` : ''; })()}</div>${btns}</div></div>`;
   if (tab === 'sites') { const pinned = x.lat !== null && x.lat !== undefined; const ck = CHECKIN_KINDS.includes(x.kind); return `<div class="row"><div class="main"><div class="l1"><b>${esc(x.name)}</b> <span class="small muted">${esc(SITE_KIND[x.kind] || '')}</span> ${lineBadge(x.line)} ${ck ? (pinned ? chip('good', 'ปักหมุดแล้ว', 'pin') : chip('warn', 'ยังไม่ปักหมุด', 'pin')) : ''} ${x.operator ? chip(x.operator === 'Partner' ? '' : 'info', x.operator === 'SSC' ? 'กระจายโดยรถบริษัท' : x.operator === 'Partner' ? 'กระจายโดย Partner' : 'รถบริษัท + Partner') : ''}</div>${hasPin(x) || x.mapsUrl ? `<div class="l1">${mapLinks(x)}</div>` : ''}${x.aliases ? `<div class="small meta">ชื่อเรียกหน้างาน: ${esc(x.aliases)}</div>` : ''}${x.backhaulCutoff ? `<div class="small meta">ตัดรอบรถมีงาน Backhaul ${esc(x.backhaulCutoff)} น.</div>` : ''}${x.notifyEmail ? `<div class="small meta">${icon('mail')} แจ้งทะเบียน: ${esc(x.notifyName || '')} ${esc(x.notifyEmail)}</div>` : ''}${x.provinces ? `<div class="small meta">ดูแลจังหวัด: ${esc(x.provinces)}</div>` : ''}${ck ? `<div class="small meta num">${pinned ? `${(+x.lat).toFixed(5)}, ${(+x.lng).toFixed(5)} · รัศมี ${fmt(num(x.radiusM) || settings().defaultRadiusM)} ม. · ${locLink(x)}` : 'วางพิกัดจาก Google Maps ในหน้าแก้ไข'}</div>` : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`; }
-  return `<div class="row"><div class="main"><div class="l1">${kindB(x.kind)} <b>${esc(x.name)}</b> ${lineBadge(x.line)}</div><div class="small meta num">${esc(x.origin || '–')} → ${esc(x.destination || '–')} · Standard ${num(x.standardKm) ? fmt(num(x.standardKm)) + ' กม.' : 'ยังไม่มี'} · เบี้ยเลี้ยง ${money(num(x.allowance))} · ทางด่วน ${money(num(x.toll))}</div>${num(x.standardKm) ? `<div class="small meta">${icon('fuel')} น้ำมันที่ให้: ${esc(fuelText(x.standardKm))}</div>` : ''}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`;
+  return `<div class="row"><div class="main"><div class="l1">${kindB(x.kind)} <b>${esc(x.name)}</b> ${lineBadge(x.line)}</div><div class="small meta num">${esc(x.origin || '–')} → ${esc(x.destination || '–')} · Standard ${num(x.standardKm) ? fmt(num(x.standardKm)) + ' กม.' : 'ยังไม่มี'} · เบี้ยเลี้ยง ${money(num(x.allowance))} · ทางด่วน ${money(num(x.toll))}</div>${(() => { const ft = routeFuelText(x); return `<div class="small meta">${icon('fuel')} ${ft ? `น้ำมันที่ให้${hasFuelSet(x) ? ' (เฮียกำหนด)' : ' (คิดจาก Standard KM)'}: ${esc(ft)}` : 'ยังไม่ได้กำหนดน้ำมันที่ให้'}</div>`; })()}${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}${btns}</div></div>`;
 }
 function fieldHtml(f, val) {
   const id = 'f-' + f.k; const req = f.req ? 'req' : '';
@@ -3396,10 +3410,10 @@ const IMPORT = {
   vehicles: { key: 'plate', cols: { plate: ['ทะเบียนหลัก(หัว)', 'ทะเบียนหลัก', 'ทะเบียนหัว', 'ทะเบียน', 'plate'], trailerPlate: ['ทะเบียนหาง', 'หาง', 'trailer'], trailerType: ['ประเภทหาง', 'trailertype'], type: ['ประเภท(ล้อ)', 'ประเภท', 'ประเภทรถ', 'ล้อ', 'type'], line: ['สาย', 'line'], ownership: ['เจ้าของ(SSC/Partner)', 'เจ้าของ', 'ownership'], partner: ['ชื่อPartner', 'partner', 'สาขา'], capWeightKg: ['รับน้ำหนัก(กก.)', 'รับน้ำหนัก', 'น้ำหนัก', 'capweight'], gpsProvider: ['ระบบGPS', 'GPS', 'gps'], tareKg: ['น้ำหนักรถเปล่า(กก.)', 'น้ำหนักรถเปล่า', 'น้ำหนักรถ', 'tare'], capVolumeCbm: ['ปริมาตร(คิว)', 'ปริมาตร', 'คิว', 'volume'], capPallets: ['พาเลท', 'pallets'], currentKm: ['เลขไมล์ปัจจุบัน', 'ไมล์ปัจจุบัน', 'currentkm'], lastServiceKm: ['ไมล์เข้าศูนย์ล่าสุด', 'เลขไมล์เข้าศูนย์ล่าสุด', 'lastservicekm'] } },
   drivers: { key: 'name', cols: { name: ['ชื่อ-นามสกุล', 'ชื่อนามสกุล', 'ชื่อ', 'name'], nickname: ['ชื่อเล่น', 'nickname'], phone: ['เบอร์โทร', 'โทร', 'phone'] } },
   sites: { key: 'name', cols: { name: ['ชื่อจุด', 'ชื่อ', 'name'], aliases: ['ชื่อเรียกหน้างาน', 'alias'], coords: ['พิกัด', 'coords', 'latlng'], radiusM: ['รัศมี(ม.)', 'รัศมี', 'radius'], line: ['สาย', 'line'] } },
-  routes: { key: 'name', cols: { name: ['ชื่อเส้นทาง', 'เส้นทาง', 'name'], kind: ['ประเภทงาน', 'ประเภท', 'kind'], line: ['สาย', 'line'], origin: ['ต้นทาง', 'origin'], destination: ['ปลายทาง', 'destination'], standardKm: ['StandardKM', 'ระยะทาง', 'กม.', 'km'], allowance: ['เบี้ยเลี้ยง', 'allowance'], toll: ['ทางด่วน', 'ค่าทางด่วน', 'toll'] } },
+  routes: { key: 'name', cols: { name: ['ชื่อเส้นทาง', 'เส้นทาง', 'name'], kind: ['ประเภทงาน', 'ประเภท', 'kind'], line: ['สาย', 'line'], origin: ['ต้นทาง', 'origin'], destination: ['ปลายทาง', 'destination'], standardKm: ['StandardKM', 'ระยะทาง', 'กม.', 'km'], fuelLiters: ['น้ำมัน(ลิตร)', 'น้ำมัน18/22ล้อ', 'น้ำมัน', 'fuel'], fuel10: ['น้ำมัน10ล้อ', 'fuel10'], allowance: ['เบี้ยเลี้ยง', 'allowance'], toll: ['ทางด่วน', 'ค่าทางด่วน', 'toll'] } },
   orders: { key: null, cols: { date: ['วันที่โหลด', 'วันที่', 'date'], dueDate: ['กำหนดส่ง', 'วันกำหนดส่ง', 'ต้องถึงลูกค้า', 'due', 'duedate'], loadTime: ['เวลาเข้าโหลด', 'เวลาโหลด', 'loadtime'], unloadAt: ['นัดลงสินค้า', 'เวลาลงสินค้า', 'unloadat'], customer: ['ลูกค้า', 'ชื่องาน', 'customer'], kind: ['ประเภทงาน', 'ประเภท', 'kind'], line: ['สาย', 'line'], category: ['หมวด', 'category'], ref: ['เลขOrder', 'เลขบิล', 'order', 'ref'], origin: ['ต้นทาง', 'origin'], destination: ['ปลายทาง', 'destination'], reqType: ['ประเภทรถ', 'Checker', 'reqtype'], pallets: ['พาเลท', 'pallets'], pieces: ['ชิ้น', 'pieces'], bills: ['บิล', 'จำนวนบิล', 'bills'], weightKg: ['น้ำหนัก(กก.)', 'น้ำหนัก', 'weight'], volumeCbm: ['ปริมาตร(คิว)', 'ปริมาตร', 'volume'], revenue: ['รายได้', 'ค่าขนส่ง', 'revenue'] } },
 };
-const NUMERIC = new Set(['tareKg', 'capWeightKg', 'capVolumeCbm', 'capPallets', 'currentKm', 'lastServiceKm', 'radiusM', 'standardKm', 'allowance', 'toll', 'pallets', 'pieces', 'bills', 'weightKg', 'volumeCbm', 'revenue']);
+const NUMERIC = new Set(['tareKg', 'capWeightKg', 'capVolumeCbm', 'capPallets', 'currentKm', 'lastServiceKm', 'radiusM', 'standardKm', 'fuelLiters', 'fuel10', 'allowance', 'toll', 'pallets', 'pieces', 'bills', 'weightKg', 'volumeCbm', 'revenue']);
 const normH = h => String(h || '').toLowerCase().replace(/[\s_\-().\/]/g, '');
 function csvSplit(line) { const out = []; let cur = '', q = false; for (let i = 0; i < line.length; i++) { const ch = line[i]; if (q) { if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; } else if (ch === '"') q = true; else if (ch === ',') { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out; }
 function tableRows(text) {
@@ -3650,7 +3664,8 @@ PAGES.pending = () => {
       ${item(s3Pinned ? 'done' : 'wait', 'พิกัดคลังพุทธมณฑลสาย 3', s3Pinned ? 'ปักหมุดแล้ว' : 'ปักหมุดเองได้ที่ ข้อมูลหลัก → สถานที่')}
       ${item(dpPinned ? 'done' : 'wait', 'พิกัดโรงงาน Dairy Plus นครสวรรค์', dpPinned ? 'ปักหมุดแล้ว (อ.พยุหะคีรี จ.นครสวรรค์)' : '')}
       ${item(has('drivers') ? 'part' : 'wait', 'รายชื่อคนขับ + เบอร์โทร', has('drivers') ? `มีแล้ว ${has('drivers')} คน` : '')}
-      ${item('wait', 'Standard KM ของแต่ละขา + ค่าทางด่วน', 'ใช้คำนวณน้ำมันที่ให้ต่อรูท (Standard KM ÷ 4 หรือ 4.8 กม./ลิตร)')}
+      ${(() => { const rs = Object.values(d.routes || {}); const n = rs.filter(hasFuelSet).length; return item(n && n === rs.length ? 'done' : n ? 'part' : 'chase', 'น้ำมันที่ให้ต่อเส้นทาง (ถามเฮียทีละเส้นทาง)', `กำหนดแล้ว ${n} จาก ${rs.length} เส้นทาง`); })()}
+      ${item('wait', 'Standard KM ของแต่ละขา + ค่าทางด่วน', 'ใช้เทียบไมล์จริงกับมาตรฐาน และคิดน้ำมันให้เส้นทางที่ยังไม่กำหนดลิตร')}
       ${item('wait', 'อัตราเบี้ยเลี้ยง', 'ต่อขา ต่อวัน หรือต่อเที่ยว')}
       ${item('wait', 'ราคาน้ำมัน และสูตรคิดราคางานเหมา', 'ตอนนี้ใช้ค่าร่าง ดีเซล 32 บาท/ลิตร บวกกำไร 20% แก้ได้ที่ ค่าตั้งค่า')}
       ${item('wait', 'ข้อมูล Feed Card', 'ใช้เทียบลิตรที่คีย์กับลิตรที่ควรให้ตาม Standard KM')}

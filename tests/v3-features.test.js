@@ -94,6 +94,12 @@ const dk = n => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.
   log('== route fuel + Feed Card checklist ==');
   await go('#master'); await page.locator('button[data-act="masterTab"][data-v="routes"]').click(); await page.waitForTimeout(200);
   ok(/10 ล้อ 29 ล\. · 18 ล้อ 35 ล\. · 22 ล้อ 35 ล\./.test(await page.locator('.row:has-text("นครสวรรค์ → เดโปพิษณุโลก")').first().textContent()), 'route shows the fuel given per truck type (140 km ÷ 4.8 / 4)');
+  await page.locator('.row:has-text("นครสวรรค์ → คลังสาย 3") button[data-act="edit"]').first().click(); await page.waitForTimeout(200);
+  await page.fill('#f-fuelLiters', '55'); await page.fill('#f-fuel10', '45'); await sheetOk();
+  const rowS3 = await page.locator('.row:has-text("นครสวรรค์ → คลังสาย 3")').first().textContent();
+  ok(/น้ำมันที่ให้ \(เฮียกำหนด\): 10 ล้อ 45 ล\. · 18 ล้อ 55 ล\. · 22 ล้อ 55 ล\./.test(rowS3), 'litres set by เฮีย for the route replace the calculation');
+  await go('#trip-t21');
+  ok(/55 ลิตร/.test(await page.locator('section:has(h2:has-text("Feed Card"))').textContent()) && /เฮียกำหนดต่อเส้นทาง/.test(await page.locator('section:has(h2:has-text("Feed Card"))').textContent()), 'trip on that route gives the litres เฮีย set');
   await go('#trips');
   ok(await page.locator('section:has(h2:has-text("Feed Card")) .row').count() === 2, 'trips page lists the 2 active trips not keyed into Feed Card');
   await go('#trip-t22');
